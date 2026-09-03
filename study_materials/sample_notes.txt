@@ -1,0 +1,16 @@
+Newton's Laws of Motion & Basic Mechanics Notes
+
+1. First Law (Inertia):
+An object remains at rest or in uniform straight-line motion unless acted upon by a net external force.
+
+2. Second Law (Force and Acceleration):
+Force equals mass times acceleration (F = m * a).
+If mass m = 5 kg and acceleration a = 3 m/s^2, the force is F = 5 * 3 = 15 Newtons.
+
+3. Third Law (Action and Reaction):
+For every action, there is an equal and opposite reaction.
+
+Key Energy Formulas:
+- Kinetic Energy: KE = 0.5 * m * v^2
+- Gravitational Potential Energy: PE = m * g * h (using g = 9.8 m/s^2)
+- Work Done: W = F * d (in Joules)

@@ -119,5 +119,35 @@ Entries are appended in chronological order. Past entries are never modified.
 - **Unit Test Suite**:
   - Ran `pytest tests/exam/` — all 9 tests passed in 2.27s.
 
+---
+
+## 2026-09-03 - Local MCP Server Setup and Verification
+
+### What was changed
+- Created `study_materials/` directory containing `sample_notes.txt` with sample physics notes and formulas.
+- Created `mcp_server/server.py` using `FastMCP` exposing 3 tutoring tools on `http://127.0.0.1:8765/sse`:
+  - `list_study_files`: Lists files in `study_materials/`.
+  - `read_study_file`: Reads text content of a selected file with path traversal safety.
+  - `calculate`: Evaluates simple arithmetic expressions safely using Python's AST.
+- Created `start-mcp.bat` in the project root: double-clickable launcher that activates `.venv` and keeps the terminal window open.
+- Created `mcp_server/test_client.py`: test client to verify tool listing and tool execution directly from the command line.
+- Configured Smart Tutor in `data/user/settings/mcp.json` to connect to `http://127.0.0.1:8765/sse`.
+
+### What was verified
+- Verified `start-mcp.bat` and `mcp_server/server.py` start the SSE server on `http://127.0.0.1:8765/sse`.
+- Verified direct tool execution with `test_client.py`:
+  - `list_study_files` returned `sample_notes.txt` (613 bytes).
+  - `read_study_file` read the note content accurately.
+  - `calculate` evaluated `2 + 3 * 4 = 14`.
+- Verified Smart Tutor connection via `/api/v1/settings/mcp` and `/api/v1/space/mcp/servers`:
+  - Connection status reports `connected`.
+  - All 3 tools listed: `mcp_local_tutoring_list_study_files`, `mcp_local_tutoring_read_study_file`, and `mcp_local_tutoring_calculate`.
+- Verified Smart Tutor internal tool execution through `MCPToolAdapter.execute()`:
+  - `list_study_files` returned the file list.
+  - `read_study_file` returned file content.
+  - `calculate` computed `(15 + 25) * 3 / 2 = 60.0`.
+- Tool manifest injection: Verified that the 3 MCP tools are discovered and injected into the agent's extended tools manifest for chat turns.
+
+
 
 

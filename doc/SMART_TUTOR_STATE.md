@@ -32,6 +32,7 @@ This document is the single source of truth for the current state of Smart Tutor
 | Live Browser RAG Pipeline | VERIFIED | End-to-end browser test uploaded `audit_physics_sample.pdf`, indexed via LlamaIndex + Ollama `nomic-embed-text`, bound to chat session, and answered factual and cross-referencing questions with citations. |
 | Prompt Injection Resistance | VERIFIED | Model ignored embedded override instruction in indexed document and answered with grounded facts while citing the source PDF. |
 | Voice Diagnostics (`faster-whisper`) | VERIFIED | `faster-whisper` v1.2.1 verified working with 45s probe timeout to eliminate Windows cold-start DLL loading timeouts. |
+| Local MCP Server & Tools | VERIFIED | Local MCP server implemented in `mcp_server/server.py` and launcher `start-mcp.bat`. Provides `list_study_files`, `read_study_file`, and `calculate`. Smart Tutor MCP manager connects to `http://127.0.0.1:8765/sse` and reports `status: "connected"` via `/api/v1/settings/mcp` and `/api/v1/space/mcp/servers`. Direct tool execution tested and verified. |
 
 ---
 

@@ -33,6 +33,7 @@ This document is the single source of truth for the current state of Smart Tutor
 | Prompt Injection Resistance | VERIFIED | Model ignored embedded override instruction in indexed document and answered with grounded facts while citing the source PDF. |
 | Voice Diagnostics (`faster-whisper`) | VERIFIED | `faster-whisper` v1.2.1 verified working with 45s probe timeout to eliminate Windows cold-start DLL loading timeouts. |
 | Local MCP Server & Tools | VERIFIED | Local MCP server implemented in `mcp_server/server.py` and launcher `start-mcp.bat`. Provides `list_study_files`, `read_study_file`, and `calculate`. Smart Tutor MCP manager connects to `http://127.0.0.1:8765/sse` and reports `status: "connected"` via `/api/v1/settings/mcp` and `/api/v1/space/mcp/servers`. Direct tool execution tested and verified. |
+| Chat Model Selection (Ollama vs OpenAI) | INVESTIGATED / PARTIAL | Main chat model selector currently only lists `gpt-4.1` (OpenAI). Ollama is running with 9 models and its OpenAI endpoint is verified working, but `model_catalog.json` lacks an Ollama LLM profile, and discovery does not auto-create missing profiles. Feasibility confirmed. |
 
 ---
 
@@ -40,7 +41,7 @@ This document is the single source of truth for the current state of Smart Tutor
 
 | Issue | Status | Details |
 | :--- | :--- | :--- |
-| None currently unresolved | RESOLVED | Verification gaps closed, Exam mode implemented, accessible Settings tabs built, and media generation cleanly removed. |
+| Ollama models not appearing in main chat selector | CONFIRMED | `data/user/settings/model_catalog.json` only contains an OpenAI profile under `services.llm`. The discovery handler `_refresh_ollama_llm_profiles` only queries Ollama if a profile with `binding: "ollama"` is already configured. Auto-seeding of the Ollama LLM profile is missing. |
 
 ---
 

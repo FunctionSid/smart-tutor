@@ -148,6 +148,38 @@ Entries are appended in chronological order. Past entries are never modified.
   - `calculate` computed `(15 + 25) * 3 / 2 = 60.0`.
 - Tool manifest injection: Verified that the 3 MCP tools are discovered and injected into the agent's extended tools manifest for chat turns.
 
+---
+
+## 2026-09-03 - Investigation: Ollama models missing from main chat selector
+
+### What was checked
+- Ran `ollama list` and checked Ollama API reachability at `http://localhost:11434/api/tags` and `http://localhost:11434/v1`.
+- Inspected `data/user/settings/model_catalog.json` for LLM and local model profiles.
+- Inspected the backend model options endpoint (`/api/v1/settings/llm-options`) in `smarttutor/api/routers/settings.py` and `smarttutor/services/model_selection/llm.py`.
+- Inspected the frontend chat model selector components (`ModelSelector.tsx`, `ChatComposer.tsx`, and `useLLMOptions.ts`).
+- Traced the complete model selection runtime path from frontend selection to backend `turn_runtime.py`, `provider_runtime.py`, and `LLMClient`.
+- Tested direct local completion using `AsyncOpenAI` against `http://localhost:11434/v1` and verified Smart Tutor's internal `LLMClient` with a scoped Ollama configuration.
+
+### What was found
+- Ollama is running and fully reachable on `http://localhost:11434`. It has 9 models installed (`qwen3.5:27b`, `qwen3:8b`, `qwen3:4b`, `qwen25-coder:latest`, `qwen25-coder-14b:latest`, `dolphin-mistral:latest`, `fauxpaslife/nanbeige4.1:latest`, `llama3:latest`, `nomic-embed-text:latest`).
+- Ollama's OpenAI-compatible endpoint (`http://localhost:11434/v1`) is working and returned valid completions ("Hello from Ollama now").
+- Smart Tutor's internal `LLMClient` successfully executed completions on Ollama when given an Ollama runtime config ("Hello there friend").
+- Root cause for missing models in the selector:
+  1. `data/user/settings/model_catalog.json` only defines one profile under `"llm"`: `llm-profile-default` (OpenAI `gpt-4.1`). No profile with `binding: "ollama"` exists under `"llm"`.
+  2. The backend discovery function `_refresh_ollama_llm_profiles(catalog)` only checks profiles already registered in `catalog["services"]["llm"]["profiles"]` that have `binding == "ollama"`. It does not auto-create an Ollama profile if none is present.
+  3. The frontend `listLLMOptions` only queries `/api/v1/settings/llm-options` without `refresh_local=true` on initial page load, and the backend only reads profiles in `model_catalog.json`.
+  4. The frontend `ModelSelector.tsx` already has complete grouping logic for `Local · {provider}` and is ready to display them once provided by the backend.
+
+### Feasibility
+- Fully doable to list all Ollama models and use them for chat.
+- All building blocks (Ollama API, backend provider spec, scoped runtime context switching, and frontend selector grouping) are already implemented and working.
+
+### Changes needed later (not implemented now)
+1. Add or auto-seed an Ollama profile in `model_catalog.json` under `"llm"` with `binding: "ollama"` and `base_url: "http://localhost:11434/v1"`.
+2. Update `_refresh_ollama_llm_profiles` so that if Ollama is reachable at `http://localhost:11434` and no Ollama profile exists in `"llm"`, it automatically creates one and populates its models.
+3. Allow the frontend `useLLMOptions` to refresh local models or discover them automatically on initial load.
+
+
 
 
 

@@ -15,14 +15,12 @@ import {
   BarChart3,
   BookOpenText,
   BrainCircuit,
-  Clapperboard,
   Code2,
   Compass,
   Database,
   FileSearch,
   Globe,
   GraduationCap,
-  Image as ImageIcon,
   Lightbulb,
   MessageSquare,
   Microscope,
@@ -192,9 +190,7 @@ type ToolName =
   | "web_search"
   | "code_execution"
   | "reason"
-  | "paper_search"
-  | "imagegen"
-  | "videogen";
+  | "paper_search";
 
 interface ToolDef {
   name: ToolName;
@@ -209,8 +205,6 @@ const ALL_TOOLS: ToolDef[] = [
   { name: "code_execution", label: "Code", icon: Code2 },
   { name: "reason", label: "Reason", icon: Sparkles },
   { name: "paper_search", label: "Arxiv Search", icon: FileSearch },
-  { name: "imagegen", label: "Image Gen", icon: ImageIcon },
-  { name: "videogen", label: "Video Gen", icon: Clapperboard },
 ];
 
 interface CapabilityDef {
@@ -245,8 +239,6 @@ const CAPABILITIES: CapabilityDef[] = [
       "code_execution",
       "reason",
       "paper_search",
-      "imagegen",
-      "videogen",
     ],
     defaultTools: [],
   },

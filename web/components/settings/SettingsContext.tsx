@@ -35,9 +35,7 @@ export type ServiceName =
   | "embedding"
   | "search"
   | "tts"
-  | "stt"
-  | "imagegen"
-  | "videogen";
+  | "stt";
 
 export type CatalogModel = {
   id: string;
@@ -109,8 +107,8 @@ export type Catalog = {
     search: CatalogService;
     tts: CatalogService;
     stt: CatalogService;
-    imagegen: CatalogService;
-    videogen: CatalogService;
+    imagegen?: CatalogService;
+    videogen?: CatalogService;
   };
 };
 
@@ -297,7 +295,7 @@ export function voiceService(service: ServiceName): boolean {
 
 /** imagegen/videogen share the catalog shape but configure media generation. */
 export function generationService(service: ServiceName): boolean {
-  return service === "imagegen" || service === "videogen";
+  return false;
 }
 
 /** Services whose model entry should prefill from the provider's default model. */
@@ -318,16 +316,7 @@ export function defaultCatalog(): Catalog {
       search: { active_profile_id: null, profiles: [] },
       tts: { active_profile_id: null, active_model_id: null, profiles: [] },
       stt: { active_profile_id: null, active_model_id: null, profiles: [] },
-      imagegen: {
-        active_profile_id: null,
-        active_model_id: null,
-        profiles: [],
-      },
-      videogen: {
-        active_profile_id: null,
-        active_model_id: null,
-        profiles: [],
-      },
+
     },
   };
 }
@@ -576,8 +565,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     search: [],
     tts: [],
     stt: [],
-    imagegen: [],
-    videogen: [],
   });
   const [toast, setToast] = useState("");
   const [saving, setSaving] = useState(false);

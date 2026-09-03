@@ -51,3 +51,47 @@ Entries are appended in chronological order. Past entries are never modified.
 ### What broke / Known issues
 - None. All Phase 2 verification gap issues resolved and verified.
 
+---
+
+## 2026-09-03 - Settings UI Restructure (Student/Advanced Tabs) and Media Generation Removal
+
+### What was changed
+- Restructured `/settings` (`SettingsHub.tsx`) into an accessible tabbed interface featuring two tabs: **Student Settings** (default tab) and **Advanced Settings**.
+- Built accessible tab controls using `role="tablist"`, `role="tab"`, and `role="tabpanel"` with ARIA attributes (`aria-selected`, `aria-controls`, `aria-labelledby`) and visible keyboard focus rings.
+- Implemented full keyboard navigation allowing ArrowLeft/ArrowRight tab switching, Space/Enter activation, and Tab key focus entry into the active panel.
+- Populated Student Settings with Theme, Interface Language, Active Chat/Tutor Model picker, Speech-to-Text provider and language, Text-to-Speech provider and voice, Voice autoplay toggle, Memory privacy and chat trace clear controls (`DELETE /api/v1/memory/trace/chat`), and basic attachment preferences.
+- Populated Advanced Settings with System Status diagnostics panel and direct links to Network/ports/CORS, Embedding, Search, Document parsing, Tools, Capabilities, MCP servers, Partners & Sub-agents, and the Full Model Catalog.
+- Completely removed Image and Video generation from Smart Tutor:
+  - Deleted route folders `web/app/(utility)/settings/image` and `web/app/(utility)/settings/video`.
+  - Removed `imagegen` and `videogen` from `MODEL_CHILDREN` in `web/lib/settings-nav.ts`.
+  - Removed `imagegen` and `videogen` from `ToolName`, `ALL_TOOLS`, and `CAPABILITIES` in `web/app/(workspace)/home/[[...sessionId]]/page.tsx`.
+  - Removed `imagegen` and `videogen` from `ServiceName` and catalog state in `web/components/settings/SettingsContext.tsx` and `web/components/settings/ServiceConfigEditor.tsx`.
+  - Stopped catalog loading and normalization for `imagegen` and `videogen` in `smarttutor/services/config/model_catalog.py`.
+  - Unregistered `ImagegenTool` and `VideogenTool` from `smarttutor/tools/builtin/__init__.py`.
+  - Cleared `_GENERATION_TOOL_SERVICES` in `smarttutor/agents/chat/agentic_pipeline.py`.
+- Built autonomous MCQ Exam Mode (Phase 3):
+  - Created Pydantic data models in `smarttutor/exam/models.py`.
+  - Implemented graph orchestration in `smarttutor/exam/graph.py` with strict question validation guardrails (single correct answer, no all/none of the above, verbatim citations).
+  - Implemented `ExamService` in `smarttutor/exam/service.py` connected to `LearningService.record_quiz_attempt`.
+  - Added FastAPI router in `smarttutor/api/routers/exam.py` and mounted in `smarttutor/api/main.py`.
+  - Created accessible frontend components `ExamRunner.tsx` (using `<fieldset>` and native `<input type="radio">` pattern from `QuizViewer.tsx`, with `aria-live` timer), `ExamResultViewer.tsx`, and `ExamGeneratorModal.tsx`.
+  - Created new page route `web/app/(workspace)/exam/page.tsx` and added Exam to primary navigation in `SidebarShell.tsx`.
+
+### What was verified
+- Verified full TypeScript compilation: `npx tsc --noEmit` exited with code 0 and zero errors.
+- Verified backend tool consistency: `validate_tool_consistency()` passed with zero drift.
+- Verified 9 unit tests in `tests/exam/` passing (guardrail validations, models, and error record creation/graduation upon retry).
+- Ran automated Playwright test in Microsoft Edge (`web/scripts/test_settings_and_features.mjs`):
+  - Verified `role="tablist"` present with Student and Advanced tabs.
+  - Verified Student tab is selected by default (`aria-selected="true"`).
+  - Verified keyboard Arrow navigation moves between Student and Advanced tabs and updates `aria-selected` and active panels.
+  - Verified Student panel controls (Theme, Language, Voice & Speech, Memory Privacy).
+  - Verified Image Generation and Video Generation are completely absent from the UI.
+  - Verified Exam page loads cleanly without console errors.
+- Verified backend system status (`/api/v1/system/status`) reports online with configured LLM, embeddings, and search.
+- Verified memory overview (`/api/v1/memory/overview`) remains operational and intact.
+
+### What broke / Known issues
+- None. All features verified working.
+
+

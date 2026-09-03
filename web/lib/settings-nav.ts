@@ -6,10 +6,8 @@ import {
   Boxes,
   Brain,
   BrainCircuit,
-  Clapperboard,
   Database,
   FileScan,
-  Image as ImageIcon,
   Library,
   MessagesSquare,
   Mic,
@@ -132,30 +130,6 @@ const MODEL_CHILDREN: SettingsLeaf[] = [
     icon: Mic,
     tile: "bg-pink-500/10 text-pink-600 dark:text-pink-400",
     service: "stt",
-  },
-  {
-    key: "imagegen",
-    href: "/settings/image",
-    label: { zh: "文生图", en: "Image Generation" },
-    blurb: {
-      zh: "chat imagegen 工具使用的文生图模型。",
-      en: "Text-to-image model for the chat imagegen tool.",
-    },
-    icon: ImageIcon,
-    tile: "bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400",
-    service: "imagegen",
-  },
-  {
-    key: "videogen",
-    href: "/settings/video",
-    label: { zh: "文生视频", en: "Video Generation" },
-    blurb: {
-      zh: "chat videogen 工具使用的文生视频模型。",
-      en: "Text-to-video model for the chat videogen tool.",
-    },
-    icon: Clapperboard,
-    tile: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400",
-    service: "videogen",
   },
 ];
 

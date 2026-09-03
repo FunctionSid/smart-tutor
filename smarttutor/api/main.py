@@ -375,6 +375,7 @@ from smarttutor.api.routers import (
     system,
     unified_ws,
     voice,
+    exam,
 )
 from smarttutor.api.routers import (
     tools as tools_router,
@@ -441,6 +442,12 @@ app.include_router(
     question_notebook.router,
     prefix="/api/v1/question-notebook",
     tags=["question-notebook"],
+    dependencies=_auth,
+)
+app.include_router(
+    exam.router,
+    prefix="/api/v1",
+    tags=["exam"],
     dependencies=_auth,
 )
 # Public UI-settings read (auth pages bootstrap the interface language

@@ -9,6 +9,7 @@ import {
   BookOpen,
   Brain,
   ChevronDown,
+  GraduationCap,
   House,
   Library,
   Lock,
@@ -53,6 +54,11 @@ const PRIMARY_NAV: NavEntry[] = [
     href: "/space/questions",
     label: "Practice",
     icon: BookOpen,
+  },
+  {
+    href: "/exam",
+    label: "Exam",
+    icon: GraduationCap,
   },
   {
     href: "/space/learning",

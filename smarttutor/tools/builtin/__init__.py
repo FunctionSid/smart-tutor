@@ -18,7 +18,6 @@ from smarttutor.capabilities.subagent import SUBAGENT_TOOL_TYPES
 from smarttutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
 from smarttutor.knowledge.manifest import KB_FILES_DEFAULT_LIMIT, KB_FILES_MAX_LIMIT
 from smarttutor.tools.exec_tool import ExecTool
-from smarttutor.tools.media_gen_tool import ImagegenTool, VideogenTool
 from smarttutor.tools.partner_memory import (
     PARTNER_BUILTIN_TOOL_NAMES,
     PartnerMemorizeTool,
@@ -1705,8 +1704,7 @@ BUILTIN_TOOL_TYPES: tuple[type[BaseTool], ...] = (
     GeoGebraAnalysisTool,
     # Text-to-image / text-to-video generation. User-toggleable + per-user
     # grant-gated; the chat pipeline only mounts them when a model is configured.
-    ImagegenTool,
-    VideogenTool,
+
     # Mastery Path + Solve + Obsidian tools — globally registered so schemas/API
     # stay stable; the chat loop capabilities decide when to auto-mount them for
     # a turn. Obsidian is a knowledge capability: when its vault is selected it
@@ -1762,8 +1760,6 @@ USER_TOGGLEABLE_TOOL_NAMES: tuple[str, ...] = (
     "paper_search",
     "reason",
     "geogebra_analysis",
-    "imagegen",
-    "videogen",
 )
 
 # Built-in tools the chat agent loop auto-mounts under context gates (a KB
@@ -1819,8 +1815,7 @@ __all__ = [
     "GeoGebraAnalysisTool",
     "GithubTool",
     "KbFilesTool",
-    "ImagegenTool",
-    "VideogenTool",
+
     "ListNotebookTool",
     "PaperSearchToolWrapper",
     "QuestionBankTool",

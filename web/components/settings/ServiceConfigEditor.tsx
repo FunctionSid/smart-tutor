@@ -57,8 +57,6 @@ const SERVICE_LABEL: Record<ServiceName, string> = {
   search: "Search",
   tts: "Text-to-Speech",
   stt: "Speech-to-Text",
-  imagegen: "Image Generation",
-  videogen: "Video Generation",
 };
 
 export function ServiceConfigEditor({ service }: { service: ServiceName }) {
@@ -938,117 +936,7 @@ export function ServiceConfigEditor({ service }: { service: ServiceName }) {
                         </div>
                       </>
                     )}
-                    {service === "imagegen" && (
-                      <>
-                        <div>
-                          <div className="mb-1.5 text-[12px] text-[var(--muted-foreground)]">
-                            {t("Image size")}
-                          </div>
-                          <input
-                            className={inputClass}
-                            value={activeModel.size || ""}
-                            onChange={(e) =>
-                              updateModelField(service, "size", e.target.value)
-                            }
-                            placeholder="1024x1024"
-                          />
-                          <p className="mt-1.5 text-[11px] text-[var(--muted-foreground)]">
-                            {t(
-                              "Default pixel size sent with each request. Leave empty for the provider default.",
-                            )}
-                          </p>
-                        </div>
-                        <div>
-                          <div className="mb-1.5 text-[12px] text-[var(--muted-foreground)]">
-                            {t("Quality / Style")}
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <input
-                              className={inputClass}
-                              value={activeModel.quality || ""}
-                              onChange={(e) =>
-                                updateModelField(
-                                  service,
-                                  "quality",
-                                  e.target.value,
-                                )
-                              }
-                              placeholder={t("quality (e.g. hd)")}
-                            />
-                            <input
-                              className={inputClass}
-                              value={activeModel.style || ""}
-                              onChange={(e) =>
-                                updateModelField(
-                                  service,
-                                  "style",
-                                  e.target.value,
-                                )
-                              }
-                              placeholder={t("style (e.g. vivid)")}
-                            />
-                          </div>
-                        </div>
-                      </>
-                    )}
-                    {service === "videogen" && (
-                      <>
-                        <div>
-                          <div className="mb-1.5 text-[12px] text-[var(--muted-foreground)]">
-                            {t("Aspect ratio")}
-                          </div>
-                          <input
-                            className={inputClass}
-                            value={activeModel.aspect_ratio || ""}
-                            onChange={(e) =>
-                              updateModelField(
-                                service,
-                                "aspect_ratio",
-                                e.target.value,
-                              )
-                            }
-                            placeholder="16:9"
-                          />
-                          <p className="mt-1.5 text-[11px] text-[var(--muted-foreground)]">
-                            {t(
-                              "Defaults sent with each request. Leave empty for the provider default.",
-                            )}
-                          </p>
-                        </div>
-                        <div>
-                          <div className="mb-1.5 text-[12px] text-[var(--muted-foreground)]">
-                            {t("Duration / Resolution")}
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <input
-                              className={inputClass}
-                              inputMode="numeric"
-                              value={activeModel.duration || ""}
-                              onChange={(e) =>
-                                updateModelField(
-                                  service,
-                                  "duration",
-                                  e.target.value,
-                                )
-                              }
-                              placeholder={t("seconds")}
-                            />
-                            <input
-                              className={inputClass}
-                              value={activeModel.resolution || ""}
-                              onChange={(e) =>
-                                updateModelField(
-                                  service,
-                                  "resolution",
-                                  e.target.value,
-                                )
-                              }
-                              placeholder="720p"
-                            />
-                          </div>
-                        </div>
-                      </>
-                    )}
+
                   </div>
                 )}
               </div>
@@ -1375,10 +1263,7 @@ function ProfileFields({
                 updateModelField(service, "dimension", match.default_dim);
               }
               if (
-                (service === "tts" ||
-                  service === "stt" ||
-                  service === "imagegen" ||
-                  service === "videogen") &&
+                (service === "tts" || service === "stt") &&
                 match?.default_model
               ) {
                 updateModelField(service, "model", match.default_model);

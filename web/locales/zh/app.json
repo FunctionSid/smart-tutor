@@ -1518,6 +1518,7 @@
   "notebooks.count.suffix": "个笔记本",
   "questions.count.suffix": "道题目",
   "skills.count.suffix": "个技能",
+  "personas.count.suffix": "个人设",
   "Skills": "技能",
   "New skill": "新建技能",
   "Import from EduHub": "从 EduHub 导入",

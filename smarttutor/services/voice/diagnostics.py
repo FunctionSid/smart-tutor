@@ -107,7 +107,7 @@ print(json.dumps({{
             [python, "-c", script],
             capture_output=True,
             text=True,
-            timeout=20,
+            timeout=45,
             check=False,
         )
     except Exception:
@@ -135,7 +135,7 @@ def _python_import_works(import_name: str) -> tuple[bool, str]:
             [python, "-c", f"import {import_name}; print('ok')"],
             capture_output=True,
             text=True,
-            timeout=20,
+            timeout=45,
             check=False,
         )
     except Exception as exc:

@@ -1398,6 +1398,7 @@
   "notebooks.count.suffix": "notebooks",
   "questions.count.suffix": "questions",
   "skills.count.suffix": "skills",
+  "personas.count.suffix": "personas",
   "Skills": "Skills",
   "New skill": "New skill",
   "Import from EduHub": "Import from EduHub",

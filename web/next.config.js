@@ -150,6 +150,26 @@ const nextConfig = {
     },
   },
 
+  async redirects() {
+    return [
+      {
+        source: "/space/notebooks",
+        destination: "/notebook",
+        permanent: false,
+      },
+      {
+        source: "/settings/mcp",
+        destination: "/space/mcp",
+        permanent: false,
+      },
+      {
+        source: "/settings/status",
+        destination: "/settings",
+        permanent: false,
+      },
+    ];
+  },
+
   // Webpack configuration (used for production builds - next build)
   webpack: (config) => {
     const path = require("path");

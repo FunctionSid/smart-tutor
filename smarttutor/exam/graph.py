@@ -69,8 +69,9 @@ class ExamGraph:
 
         if len(questions) < state.num_questions and state.passages:
             cycle = 0
-            while len(questions) < state.num_questions and cycle < len(state.passages):
-                passage = state.passages[cycle]
+            max_cycles = state.num_questions * 2
+            while len(questions) < state.num_questions and cycle < max_cycles:
+                passage = state.passages[cycle % len(state.passages)]
                 cycle += 1
                 question = await self.generate_and_validate_question(
                     passage=passage,
@@ -159,6 +160,9 @@ class ExamGraph:
 
             validation = await self._call_validate_guardrail(draft_raw, passage_text)
             if validation.valid:
+                opts = draft_raw["options"]
+                if isinstance(opts, dict):
+                    opts = [opts.get("A", ""), opts.get("B", ""), opts.get("C", ""), opts.get("D", "")]
                 citation = Citation(
                     source=source_name,
                     page=page_num,
@@ -167,7 +171,7 @@ class ExamGraph:
                 return ExamQuestion(
                     topic=topic,
                     question=draft_raw["question"],
-                    options=draft_raw["options"],
+                    options=opts,
                     correct_option=draft_raw["correct_option"],
                     explanation=draft_raw["explanation"],
                     citation=citation,
@@ -230,6 +234,9 @@ class ExamGraph:
     ) -> QuestionValidation:
         question = draft.get("question", "").strip()
         options = draft.get("options")
+        if isinstance(options, dict):
+            options = [options.get("A", ""), options.get("B", ""), options.get("C", ""), options.get("D", "")]
+            draft["options"] = options
         correct_option = draft.get("correct_option", "").strip().upper()
         explanation = draft.get("explanation", "").strip()
         quote = draft.get("quote", "").strip()

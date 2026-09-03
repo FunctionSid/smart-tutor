@@ -94,4 +94,30 @@ Entries are appended in chronological order. Past entries are never modified.
 ### What broke / Known issues
 - None. All features verified working.
 
+---
+
+## 2026-09-03 - Phase 3: Autonomous Exam Mode Live Verification and Learning Integration
+
+### What was changed
+- Fixed candidate options normalization in `ExamGraph` (`smarttutor/exam/graph.py`) to handle both list and dictionary representations from LLM outputs without failing guardrail checks.
+- Enhanced passage cycling in `ExamGraph.execute` using modulo indexing over available passages to ensure the requested question quota is reached even for small knowledge bases.
+- Created Playwright end-to-end browser verification script in `web/scripts/test_exam_e2e_browser.mjs` executing real user journey: launching exam, interacting with native radio inputs inside accessible fieldsets, multi-step navigation, review mode, and result analysis.
+
+### What was verified
+- **Live KB Generation**: Generated multiple-choice questions from `physics_optics_kb_1788397480898` with exact 4-option formatting, verified single correct answer, and verbatim grounding citations.
+- **Direct LearningStore Verification**:
+  - Wrong answer created an `ErrorRecord` with status `active` and `ErrorType.UNDERSTANDING_DEVIATION` in `LearningStore`.
+  - Subsequent correct answer on the same question transitioned the `ErrorRecord` status to `graduated`.
+- **Live Browser Execution (`web/scripts/test_exam_e2e_browser.mjs`)**:
+  - Microsoft Edge launched in headless mode, navigated to `/exam`, and selected the generated exam.
+  - Verified accessible `<fieldset>` with `<legend>` containing question text.
+  - Verified native radio inputs (`input[type="radio"]`) with keyboard accessibility.
+  - Answered Question 1 with Option B, navigated via "Next", answered Question 2 with Option A.
+  - Navigated through "Review & Submit" screen confirming answered status.
+  - Submitted exam via "Submit Exam Now".
+  - Verified results page rendering: calculated exact score (`1 / 2 (50%)`), displayed explanation, and rendered verbatim source citation quote.
+- **Unit Test Suite**:
+  - Ran `pytest tests/exam/` — all 9 tests passed in 2.27s.
+
+
 

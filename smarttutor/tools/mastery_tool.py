@@ -1,0 +1,33 @@
+"""Compatibility exports for mastery path tools.
+
+The mastery loop capability owns the implementation under
+``smarttutor.capabilities.mastery.tools``. This module keeps the historical
+import path stable for the built-in tool registry, capability manifests, and
+external users.
+"""
+
+from smarttutor.capabilities.mastery.tools import (
+    MASTERY_TOOL_NAMES,
+    MASTERY_TOOL_TYPES,
+    MasteryAssessTool,
+    MasteryBuildTool,
+    MasteryGradeTool,
+    MasteryLeaveTool,
+    MasteryPathsTool,
+    MasteryQuizTool,
+    MasteryStatusTool,
+    MasterySwitchTool,
+)
+
+__all__ = [
+    "MASTERY_TOOL_NAMES",
+    "MASTERY_TOOL_TYPES",
+    "MasteryAssessTool",
+    "MasteryBuildTool",
+    "MasteryGradeTool",
+    "MasteryLeaveTool",
+    "MasteryPathsTool",
+    "MasteryQuizTool",
+    "MasteryStatusTool",
+    "MasterySwitchTool",
+]

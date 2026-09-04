@@ -24,18 +24,37 @@ def client() -> TestClient:
 def test_tts_returns_audio_bytes(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
 
-    async def fake_synth(text: str, *, voice=None, response_format=None, **_: Any):
+    async def fake_synth(
+        text: str,
+        *,
+        voice=None,
+        response_format=None,
+        speed=None,
+        volume=None,
+        **_: Any,
+    ):
         captured["text"] = text
         captured["voice"] = voice
         captured["format"] = response_format
+        captured["speed"] = speed
+        captured["volume"] = volume
         return b"audio-bytes", "audio/mpeg"
 
     monkeypatch.setattr(voice_router, "synthesize_speech", fake_synth)
-    resp = client.post("/api/v1/voice/tts", json={"text": "hello", "voice": "nova"})
+    resp = client.post(
+        "/api/v1/voice/tts",
+        json={"text": "hello", "voice": "nova", "speed": -2, "volume": 80},
+    )
     assert resp.status_code == 200
     assert resp.content == b"audio-bytes"
     assert resp.headers["content-type"] == "audio/mpeg"
-    assert captured == {"text": "hello", "voice": "nova", "format": None}
+    assert captured == {
+        "text": "hello",
+        "voice": "nova",
+        "format": None,
+        "speed": -2,
+        "volume": 80,
+    }
 
 
 def test_tts_wraps_pcm_bytes_as_browser_playable_wav(
@@ -125,3 +144,60 @@ def test_voice_capabilities_returns_diagnostic_payload(
     assert resp.status_code == 200
     assert resp.json()["stt"][0]["name"] == "faster-whisper"
     assert resp.json()["tts"][0]["name"] == "Edge TTS"
+
+
+def test_sapi_voice_discovery_returns_dynamic_payload(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        voice_router,
+        "discover_sapi_voices",
+        lambda: [{"id": "voice-1", "name": "Installed Voice", "culture": "en-US"}],
+    )
+
+    resp = client.get("/api/v1/voice/sapi/voices")
+
+    assert resp.status_code == 200
+    assert resp.json()["voices"][0]["name"] == "Installed Voice"
+
+
+def test_hey_jarvis_probe_uses_wake_model(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        voice_router,
+        "probe_hey_jarvis",
+        lambda: {"model": "hey_jarvis", "loadable": True, "score": 0.0, "detected": False},
+    )
+
+    resp = client.get("/api/v1/voice/wake/hey-jarvis/probe")
+
+    assert resp.status_code == 200
+    assert resp.json()["model"] == "hey_jarvis"
+    assert resp.json()["loadable"] is True
+
+
+def test_hey_jarvis_rejects_wrong_sample_rate(client: TestClient) -> None:
+    resp = client.post(
+        "/api/v1/voice/wake/hey-jarvis",
+        json={"pcm16_base64": "AAAA", "sample_rate": 8000},
+    )
+
+    assert resp.status_code == 400
+
+
+def test_hey_jarvis_scores_pcm_payload(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_score(pcm16: bytes, *, threshold: float):
+        captured["pcm16"] = pcm16
+        captured["threshold"] = threshold
+        return {"model": "hey_jarvis", "score": 0.8, "detected": True}
+
+    monkeypatch.setattr(voice_router, "score_hey_jarvis", fake_score)
+    resp = client.post(
+        "/api/v1/voice/wake/hey-jarvis",
+        json={"pcm16_base64": "AAAA", "sample_rate": 16000, "threshold": 0.7},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["detected"] is True
+    assert captured == {"pcm16": b"\x00\x00\x00", "threshold": 0.7}

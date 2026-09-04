@@ -5,6 +5,7 @@ from copy import deepcopy
 import json
 import os
 from pathlib import Path
+import shutil
 import tempfile
 import threading
 from typing import Any
@@ -136,6 +137,38 @@ def _default_catalog() -> dict[str, Any]:
     }
 
 
+def _ensure_windows_speech_tts_profile(service: dict[str, Any]) -> bool:
+    """Expose local Windows SAPI/System.Speech TTS when PowerShell is available."""
+    if os.name != "nt" or not shutil.which("powershell"):
+        return False
+    profiles = service.setdefault("profiles", [])
+    if any(profile.get("binding") == "windows_speech" for profile in profiles if isinstance(profile, dict)):
+        return False
+    profiles.append(
+        {
+            "id": "tts-profile-windows-speech",
+            "name": "Windows SAPI",
+            "binding": "windows_speech",
+            "base_url": "powershell",
+            "api_key": "sk-no-key-required",
+            "api_version": "",
+            "extra_headers": {},
+            "models": [
+                {
+                    "id": "tts-model-windows-speech-system",
+                    "name": "System.Speech",
+                    "model": "system-speech",
+                    "voice": "",
+                    "response_format": "wav",
+                    "speed": 0,
+                    "volume": 100,
+                }
+            ],
+        }
+    )
+    return True
+
+
 class ModelCatalogService:
     _instances: dict[str, "ModelCatalogService"] = {}
 
@@ -218,6 +251,8 @@ class ModelCatalogService:
         services.setdefault("search", _search_shell())
         services.setdefault("tts", _service_shell())
         services.setdefault("stt", _service_shell())
+        if _ensure_windows_speech_tts_profile(services["tts"]):
+            changed = True
         for service_name in ("llm", "embedding", "search", "tts", "stt"):
             service = services[service_name]
             profiles = service.setdefault("profiles", [])

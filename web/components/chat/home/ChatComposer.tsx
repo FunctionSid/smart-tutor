@@ -50,6 +50,7 @@ import ContextBudgetChip, { type ContextBudget } from "./ContextBudgetChip";
 import KnowledgeSelector from "./KnowledgeSelector";
 import ModelSelector from "./ModelSelector";
 import PersonaSelector from "./PersonaSelector";
+import HandsFreeControl from "./HandsFreeControl";
 
 type SpaceSelectionCounts = {
   attachments: number;
@@ -1086,6 +1087,12 @@ export default memo(function ChatComposer({
                 {contextBudget ? (
                   <ContextBudgetChip budget={contextBudget} />
                 ) : null}
+
+                <HandsFreeControl
+                  isStreaming={isStreaming}
+                  onSend={onSend}
+                  onCancelStreaming={onCancelStreaming}
+                />
 
                 <button
                   type="button"

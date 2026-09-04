@@ -26,6 +26,7 @@ from smarttutor.services.voice.adapters.global_tools import (
     GlobalGTTSTTSAdapter,
     GlobalPiperTTSAdapter,
     GlobalPyttsx3TTSAdapter,
+    WindowsSystemSpeechTTSAdapter,
 )
 from smarttutor.services.voice.adapters.openai_compat import (
     OpenAICompatSTTAdapter,
@@ -487,6 +488,42 @@ async def test_global_pyttsx3_adapter_returns_wav(
 
     assert audio == b"RIFFwav"
     assert content_type == "audio/wav"
+
+
+@pytest.mark.asyncio
+async def test_windows_system_speech_does_not_treat_model_as_voice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, str] = {}
+
+    async def fake_run(args: list[str], *, input_text=None, timeout: int) -> str:
+        captured["command"] = args[-1]
+        output_start = captured["command"].index("$s.SetOutputToWaveFile('") + len(
+            "$s.SetOutputToWaveFile('"
+        )
+        output_end = captured["command"].index("')", output_start)
+        Path(captured["command"][output_start:output_end]).write_bytes(b"RIFFwav")
+        return ""
+
+    monkeypatch.setattr(
+        "smarttutor.services.voice.adapters.global_tools._run_subprocess",
+        fake_run,
+    )
+    cfg = TTSConfig(
+        model="system-speech",
+        base_url="powershell",
+        voice="",
+        speed=-2,
+        volume=80,
+    )
+
+    audio, content_type = await WindowsSystemSpeechTTSAdapter().synthesize("hello", cfg)
+
+    assert audio == b"RIFFwav"
+    assert content_type == "audio/wav"
+    assert "SelectVoice('system-speech')" not in captured["command"]
+    assert "$s.Rate = -2;" in captured["command"]
+    assert "$s.Volume = 80;" in captured["command"]
 
 
 @pytest.mark.asyncio

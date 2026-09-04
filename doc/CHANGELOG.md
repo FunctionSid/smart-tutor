@@ -230,4 +230,42 @@ Entries are appended in chronological order. Past entries are never modified.
 - Full `npm run lint` currently crashes on Windows with exit code `-1073741819` before printing diagnostics; targeted lint of all changed frontend files passes.
 - OpenAI streaming answer verification is blocked by exhausted API credits on the configured account.
 
+---
+
+## 2026-09-04 - Hands-Free Hey Jarvis Voice Mode
+
+### What was implemented
+- Added an additive Hands-Free control to the existing chat composer. It is OFF by default, uses the normal chat/session pipeline, and does not replace the existing microphone button.
+- Locked wake-word behavior to `Hey Jarvis` only and added backend OpenWakeWord endpoints for model probing and 16 kHz PCM scoring.
+- Added a deterministic Hands-Free state machine covering OFF, wake waiting, wake detected, capturing, transcribing, thinking, speaking, recovery, and interruption.
+- Added browser focus-only listening, one-utterance capture with local RMS end-of-speech detection, and existing `/api/v1/voice/stt` transcription.
+- Added always-on barge-in: Hey Jarvis interruption is immediate; ordinary speech requires sustained local speech activity before cancelling.
+- Added streaming answer-to-TTS chunking that strips Qwen `<think>` content and Markdown before speech, prefers sentence/clause boundaries, and invalidates stale TTS after interruption.
+- Exposed Windows SAPI/System.Speech as a local TTS provider in catalog normalization when PowerShell is available, with dynamic SAPI voice discovery and rate/volume pass-through.
+- Preserved the screen-reader fix: assistant streaming content remains normal document content, thinking is not live-announced, and Hands-Free announcements are coarse state changes only.
+
+### Files changed
+- Backend voice: `smarttutor/api/routers/voice.py`, `smarttutor/services/voice/sapi.py`, `smarttutor/services/voice/wake.py`, `smarttutor/services/voice/__init__.py`, `smarttutor/services/voice/config.py`, `smarttutor/services/voice/adapters/global_tools.py`.
+- Catalog/runtime: `smarttutor/services/config/model_catalog.py`, `smarttutor/services/config/provider_runtime.py`.
+- Frontend Hands-Free: `web/components/chat/home/HandsFreeControl.tsx`, `web/components/chat/home/ChatComposer.tsx`, `web/components/chat/home/ChatMessages.tsx`, `web/components/settings/SettingsHub.tsx`, `web/lib/hands-free-settings.ts`, `web/lib/hands-free-speech.ts`, `web/lib/hands-free-state.ts`.
+- Tests/docs: `web/tests/hands-free.test.ts`, `tests/api/test_voice_routes.py`, `tests/services/config/test_provider_runtime.py`, `tests/services/test_model_catalog.py`, `doc/SMART_TUTOR_STATE.md`, `doc/CHANGELOG.md`.
+
+### What was verified
+- `python -c "from openwakeword import Model; ... Model(wakeword_models=['hey_jarvis']) ..."` loaded the installed Hey Jarvis model and scored a silent frame.
+- `.\.venv\Scripts\python.exe -c "from smarttutor.services.voice.wake import probe_hey_jarvis; print(probe_hey_jarvis())"` returned `loadable: True`.
+- `.\.venv\Scripts\python.exe -c "from smarttutor.services.voice.sapi import discover_sapi_voices; print(discover_sapi_voices())"` found installed System.Speech voices dynamically.
+- Direct Windows System.Speech synthesis produced `audio/wav` bytes beginning with `RIFF`, including rate/volume override coverage.
+- Existing `transcribe_audio` facade transcribed a generated SAPI WAV through the configured local faster-whisper STT path.
+- Smart Tutor model-selection runtime resolved `llm-profile-ollama-local` + `qwen3:4b`; internal `LLMClient` returned `smart tutor qwen ok`.
+- `npx tsc --noEmit` passed.
+- `npm run test:node` passed: 606 tests.
+- `npx eslint components/chat/home/HandsFreeControl.tsx components/chat/home/ChatComposer.tsx components/chat/home/ChatMessages.tsx components/settings/SettingsHub.tsx lib/hands-free-settings.ts lib/hands-free-state.ts lib/hands-free-speech.ts tests/hands-free.test.ts` passed with zero warnings/errors.
+- `.\.venv\Scripts\python.exe -m pytest tests\services\test_model_catalog.py tests\services\config\test_provider_runtime.py tests\api\test_voice_routes.py tests\services\test_voice.py tests\exam -q` passed: 89 tests.
+
+### Known limitations
+- No live spoken microphone test of the actual phrase "Hey Jarvis" was performed.
+- NVDA manual verification was not performed.
+- Browser focus and barge-in behavior are covered by state/helper tests and code inspection, not by a live Playwright microphone run.
+- Ordinary speech barge-in currently uses browser RMS activity plus browser echo/noise constraints, not a dedicated browser-side `webrtcvad` or Silero integration.
+- OpenWakeWord emits a SciPy/NumPy compatibility warning in this environment, but the `hey_jarvis` model still loaded and inference executed.
 

@@ -261,20 +261,29 @@ class WindowsSystemSpeechTTSAdapter(BaseTTSAdapter):
 
     async def synthesize(self, text: str, config: TTSConfig) -> tuple[bytes, str]:
         powershell = _resolve_executable(config.base_url, "powershell")
-        voice = (config.voice or config.model or "").strip()
+        voice = (config.voice or "").strip()
+        rate = max(-10, min(10, round(config.speed))) if config.speed is not None else None
+        volume = max(0, min(100, int(config.volume))) if config.volume is not None else None
         with tempfile.TemporaryDirectory(prefix="smarttutor-system-speech-") as tmp:
             tmp_dir = Path(tmp)
             input_path = tmp_dir / "input.txt"
             output_path = tmp_dir / "speech.wav"
             input_path.write_text(text, encoding="utf-8")
+            input_arg = str(input_path).replace("'", "''")
+            output_arg = str(output_path).replace("'", "''")
             script = (
                 "Add-Type -AssemblyName System.Speech; "
                 "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
-                f"$text = Get-Content -Raw -Encoding UTF8 '{input_path}'; "
+                f"$text = Get-Content -Raw -Encoding UTF8 '{input_arg}'; "
             )
             if voice:
-                script += f"$s.SelectVoice('{voice}'); "
-            script += f"$s.SetOutputToWaveFile('{output_path}'); $s.Speak($text); $s.Dispose();"
+                voice_arg = voice.replace("'", "''")
+                script += f"$s.SelectVoice('{voice_arg}'); "
+            if rate is not None:
+                script += f"$s.Rate = {rate}; "
+            if volume is not None:
+                script += f"$s.Volume = {volume}; "
+            script += f"$s.SetOutputToWaveFile('{output_arg}'); $s.Speak($text); $s.Dispose();"
             await _run_subprocess(
                 [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
                 timeout=config.request_timeout,

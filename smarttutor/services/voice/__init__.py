@@ -21,6 +21,8 @@ async def synthesize_speech(
     catalog: dict[str, Any] | None = None,
     voice: str | None = None,
     response_format: str | None = None,
+    speed: float | None = None,
+    volume: int | None = None,
     strip_markdown: bool = True,
 ) -> tuple[bytes, str]:
     """Synthesize ``text`` using the active TTS catalog selection.
@@ -35,6 +37,10 @@ async def synthesize_speech(
         config.voice = voice
     if response_format:
         config.response_format = response_format
+    if speed is not None:
+        config.speed = speed
+    if volume is not None:
+        config.volume = volume
     prepared = (
         strip_markdown_for_speech(text, max_chars=config.max_input_chars)
         if strip_markdown

@@ -46,9 +46,21 @@ import {
 } from "@/lib/settings-nav";
 import { useVoiceAutoplayPreference } from "@/hooks/useVoiceAutoplay";
 import { inputClass, selectClass, selectOptionClass } from "@/components/settings/shared";
+import {
+  DEFAULT_HANDS_FREE_SETTINGS,
+  readHandsFreeSettings,
+  writeHandsFreeSettings,
+  type HandsFreeSettings,
+} from "@/lib/hands-free-settings";
 
 type NetworkPreview = {
   apiBase: string;
+};
+
+type SapiVoice = {
+  id: string;
+  name: string;
+  culture?: string;
 };
 
 export default function SettingsHub() {
@@ -72,6 +84,11 @@ export default function SettingsHub() {
   } = useSettings();
 
   const { value: autoplay, setValue: setAutoplay, loading: autoplayLoading } = useVoiceAutoplayPreference();
+  const [handsFree, setHandsFree] = useState<HandsFreeSettings>(
+    DEFAULT_HANDS_FREE_SETTINGS,
+  );
+  const [sapiVoices, setSapiVoices] = useState<SapiVoice[]>([]);
+  const [sapiVoiceError, setSapiVoiceError] = useState("");
 
   // Tab State: "student" is default
   const [activeTab, setActiveTab] = useState<"student" | "advanced">("student");
@@ -141,6 +158,36 @@ export default function SettingsHub() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    setHandsFree(readHandsFreeSettings());
+    let cancelled = false;
+    void (async () => {
+      try {
+        const resp = await apiFetch(apiUrl("/api/v1/voice/sapi/voices"));
+        if (!resp.ok) throw new Error(await resp.text());
+        const payload = (await resp.json()) as { voices?: SapiVoice[] };
+        if (!cancelled) setSapiVoices(payload.voices ?? []);
+      } catch (exc) {
+        if (!cancelled) {
+          setSapiVoiceError(
+            exc instanceof Error ? exc.message : "Could not discover SAPI voices.",
+          );
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const updateHandsFree = useCallback((patch: Partial<HandsFreeSettings>) => {
+    setHandsFree((current) => {
+      const next = { ...current, ...patch, wakeWord: "Hey Jarvis" as const };
+      writeHandsFreeSettings(next);
+      return next;
+    });
   }, []);
 
   const handleClearChatMemory = async () => {
@@ -334,7 +381,7 @@ export default function SettingsHub() {
                       : "border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
                   }`}
                 >
-                  English
+                  {tr({ zh: "English", en: "English" })}
                 </button>
                 <button
                   type="button"
@@ -345,7 +392,7 @@ export default function SettingsHub() {
                       : "border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
                   }`}
                 >
-                  中文 (Chinese)
+                  {tr({ zh: "中文 (Chinese)", en: "中文 (Chinese)" })}
                 </button>
               </div>
             </div>
@@ -502,6 +549,100 @@ export default function SettingsHub() {
                 }`}
               />
             </button>
+          </div>
+
+          <div className="mt-6 rounded-xl border border-[var(--border)]/60 bg-[var(--card)]/40 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-[var(--foreground)]">
+                  {tr({ zh: "免手动语音 (Hands-Free)", en: "Hands-Free" })}
+                </div>
+                <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">
+                  {tr({
+                    zh: "使用本地 Hey Jarvis 唤醒词、语音输入和朗读。仅在浏览器窗口聚焦时监听。",
+                    en: "Use local Hey Jarvis wake detection, voice input, and speech. Listening only runs while the browser window is focused.",
+                  })}
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={handsFree.enabled}
+                onClick={() => updateHandsFree({ enabled: !handsFree.enabled })}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                  handsFree.enabled ? "bg-blue-600" : "bg-[var(--border)]"
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
+                    handsFree.enabled ? "translate-x-6" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <label className="block">
+                <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                  {tr({ zh: "唤醒词", en: "Wake word" })}
+                </span>
+                <input className={`mt-2 ${inputClass}`} value="Hey Jarvis" readOnly />
+              </label>
+              <label className="block">
+                <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                  {tr({ zh: "SAPI 声音", en: "SAPI Voice" })}
+                </span>
+                <select
+                  className={`mt-2 ${selectClass}`}
+                  value={handsFree.sapiVoice}
+                  onChange={(event) => updateHandsFree({ sapiVoice: event.target.value })}
+                >
+                  <option value="" className={selectOptionClass}>
+                    {tr({ zh: "系统默认", en: "System default" })}
+                  </option>
+                  {sapiVoices.map((voice) => (
+                    <option key={voice.id} value={voice.name} className={selectOptionClass}>
+                      {voice.name}
+                      {voice.culture ? ` (${voice.culture})` : ""}
+                    </option>
+                  ))}
+                </select>
+                {sapiVoiceError ? (
+                  <span className="mt-1 block text-[11px] text-[var(--destructive)]">
+                    {sapiVoiceError}
+                  </span>
+                ) : null}
+              </label>
+              <label className="block">
+                <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                  {tr({ zh: "最短插话时长", en: "Minimum barge-in speech" })}
+                </span>
+                <input
+                  className={`mt-2 ${inputClass}`}
+                  type="number"
+                  min={200}
+                  max={2000}
+                  step={50}
+                  value={handsFree.minBargeInMs}
+                  onChange={(event) =>
+                    updateHandsFree({ minBargeInMs: Number(event.target.value) })
+                  }
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                  {tr({ zh: "朗读音量", en: "Volume" })}
+                </span>
+                <input
+                  className="mt-3 w-full accent-blue-600"
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={handsFree.volume}
+                  onChange={(event) => updateHandsFree({ volume: Number(event.target.value) })}
+                />
+              </label>
+            </div>
           </div>
         </section>
 

@@ -21,6 +21,13 @@ from smarttutor.services.voice import (
     transcribe_audio,
 )
 from smarttutor.services.voice.diagnostics import collect_voice_capabilities
+from smarttutor.services.voice.sapi import discover_sapi_voices
+from smarttutor.services.voice.wake import (
+    DEFAULT_WAKE_THRESHOLD,
+    EXPECTED_SAMPLE_RATE,
+    probe_hey_jarvis,
+    score_hey_jarvis,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,12 +46,60 @@ class TTSRequest(BaseModel):
     text: str = Field(..., min_length=1)
     voice: str | None = None
     format: str | None = None
+    speed: float | None = None
+    volume: int | None = Field(default=None, ge=0, le=100)
+
+
+class WakeScoreRequest(BaseModel):
+    """16 kHz mono PCM16 wake-word inference request."""
+
+    pcm16_base64: str = Field(..., min_length=1)
+    sample_rate: int = EXPECTED_SAMPLE_RATE
+    threshold: float = DEFAULT_WAKE_THRESHOLD
 
 
 @router.get("/capabilities")
 async def voice_capabilities() -> dict:
     """Report installed/configured/implemented/tested voice capabilities."""
     return collect_voice_capabilities()
+
+
+@router.get("/sapi/voices")
+async def sapi_voices() -> dict[str, object]:
+    """Discover installed Windows SAPI/System.Speech voices dynamically."""
+    try:
+        voices = discover_sapi_voices()
+    except VoiceProviderError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return {"voices": voices}
+
+
+@router.get("/wake/hey-jarvis/probe")
+async def hey_jarvis_probe() -> dict[str, object]:
+    """Verify the installed Hey Jarvis wake-word model can load and infer."""
+    try:
+        return probe_hey_jarvis()
+    except VoiceProviderError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@router.post("/wake/hey-jarvis")
+async def hey_jarvis_score(payload: WakeScoreRequest) -> dict[str, object]:
+    """Score a 16 kHz mono PCM16 frame/chunk with the installed Hey Jarvis model."""
+    if payload.sample_rate != EXPECTED_SAMPLE_RATE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Hey Jarvis wake-word inference requires 16 kHz mono PCM16 audio.",
+        )
+    try:
+        import base64
+
+        pcm16 = base64.b64decode(payload.pcm16_base64)
+        return score_hey_jarvis(pcm16, threshold=payload.threshold)
+    except VoiceProviderError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 def _parse_pcm_content_type(content_type: str) -> tuple[int, int] | None:
@@ -90,6 +145,8 @@ async def text_to_speech(payload: TTSRequest) -> Response:
             payload.text,
             voice=payload.voice,
             response_format=payload.format,
+            speed=payload.speed,
+            volume=payload.volume,
         )
     except ValueError as exc:  # missing/invalid configuration
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

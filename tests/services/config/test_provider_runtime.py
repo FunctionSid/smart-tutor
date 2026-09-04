@@ -6,6 +6,7 @@ from smarttutor.services.config.provider_runtime import (
     SEARCH_PROVIDERS,
     resolve_llm_runtime_config,
     resolve_search_runtime_config,
+    resolve_tts_runtime_config,
     search_fallback_candidates,
     search_missing_credential,
     search_provider_credentials,
@@ -504,6 +505,48 @@ def test_llm_context_window_passes_through_from_catalog() -> None:
     )
     resolved = resolve_llm_runtime_config(catalog=catalog)
     assert resolved.context_window == 128000
+
+
+def test_windows_speech_tts_preserves_rate_and_volume() -> None:
+    catalog = {
+        "version": 1,
+        "services": {
+            "tts": {
+                "active_profile_id": "tts-p",
+                "active_model_id": "tts-m",
+                "profiles": [
+                    {
+                        "id": "tts-p",
+                        "name": "Windows SAPI",
+                        "binding": "windows_speech",
+                        "base_url": "powershell",
+                        "api_key": "",
+                        "api_version": "",
+                        "extra_headers": {},
+                        "models": [
+                            {
+                                "id": "tts-m",
+                                "name": "System.Speech",
+                                "model": "system-speech",
+                                "voice": "Example Voice",
+                                "response_format": "wav",
+                                "speed": -2,
+                                "volume": 80,
+                            }
+                        ],
+                    }
+                ],
+            }
+        },
+    }
+
+    resolved = resolve_tts_runtime_config(catalog=catalog)
+
+    assert resolved.provider_name == "windows_speech"
+    assert resolved.adapter == "windows_system_speech"
+    assert resolved.voice == "Example Voice"
+    assert resolved.speed == -2
+    assert resolved.volume == 80
 
 
 def test_llm_selection_overrides_active_model_without_mutating_catalog() -> None:

@@ -1036,6 +1036,21 @@ def _coerce_optional_float(value: Any) -> float | None:
     return parsed if parsed > 0 else None
 
 
+def _coerce_optional_number(value: Any) -> float | None:
+    """Parse a float from catalog values, returning ``None`` when unset."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    try:
+        return float(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _coerce_optional_int(value: Any) -> int | None:
+    parsed = _coerce_optional_number(value)
+    return int(parsed) if parsed is not None else None
+
+
 def resolve_tts_runtime_config(
     catalog: dict[str, Any] | None = None,
     *,
@@ -1069,7 +1084,8 @@ def resolve_tts_runtime_config(
         extra_headers=_to_headers((profile or {}).get("extra_headers")),
         voice=voice,
         response_format=response_format,
-        speed=_coerce_optional_float((model or {}).get("speed")),
+        speed=_coerce_optional_number((model or {}).get("speed")),
+        volume=_coerce_optional_int((model or {}).get("volume")),
     )
 
 

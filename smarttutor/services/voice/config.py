@@ -39,6 +39,7 @@ class TTSConfig:
     voice: str = ""
     response_format: str = "mp3"
     speed: float | None = None
+    volume: int | None = None
     max_input_chars: int = DEFAULT_MAX_INPUT_CHARS
     request_timeout: int = 60
 

@@ -1,6 +1,6 @@
 # Smart Tutor State (Living Source of Truth)
 
-Last updated: 2026-09-04 14:55 IST
+Last updated: 2026-09-04 16:23 IST
 
 This document is the single source of truth for the current state of Smart Tutor. It records only verified facts, confirmed working features, confirmed broken issues, and active configuration. Speculative or unverified claims are not kept here.
 
@@ -37,6 +37,7 @@ This document is the single source of truth for the current state of Smart Tutor
 | Chat Model Selection (Ollama vs OpenAI) | VERIFIED | `/api/v1/settings/llm-options?refresh_local=true` auto-seeds the missing Ollama LLM profile, discovers 8 chat-capable local Ollama models, keeps OpenAI `gpt-4.1` as the active default, and excludes embedding-only `nomic-embed-text`. Microsoft Edge verified initial chat selector loading requests local refresh and can select `qwen3:4b` under `Local · Ollama`. |
 | Exam Model Selection | VERIFIED | Exam generation modal now uses the shared LLM selector and submits the selected `{profile_id, model_id}` to `/api/v1/exam/generate`. Backend exam generation resolves the same request-scoped LLM config as chat. Microsoft Edge payload verification confirmed chat and exam send identical selected Ollama IDs. |
 | Chat Streaming Screen Reader Announcements | VERIFIED | Streaming assistant text is normal `role="article"` content instead of an `aria-live` region. A dedicated hidden `role="status"` announces only `Smart Tutor is generating a response.` and `Response complete.`. The visual elapsed timer remains visible but is removed from live regions and hidden from the status accessible name. Qwen `<think>` cards remain visible and keyboard-accessible with `aria-live="off"`. Verified by `npm run test:node` with 597 passing node tests and live Microsoft Edge automation against Ollama `qwen3:4b`; NVDA manual verification was not performed. |
+| Hands-Free Voice Mode | VERIFIED WITH LIMITATIONS | Additive chat-composer mode starts OFF by default and uses an explicit `OFF -> WAKE_WAITING -> WAKE_DETECTED -> CAPTURING -> TRANSCRIBING -> THINKING -> SPEAKING -> WAKE_WAITING` state machine. Wake word is locked to `Hey Jarvis`; backend verifies/scans the installed OpenWakeWord `hey_jarvis` model with 16 kHz PCM. Captured utterances use the existing `/api/v1/voice/stt` facade, preserving the normal Smart Tutor session/model-selection path. Streaming assistant text is converted to speech-friendly chunks, strips Qwen `<think>`/Markdown before `/api/v1/voice/tts`, and invalidates in-flight TTS on interruption. Barge-in is always on: Hey Jarvis is immediate, ordinary speech requires sustained local RMS speech activity. Listening is focus-only via browser focus/visibility checks. Windows SAPI is exposed as a local TTS provider when PowerShell/System.Speech is available, with dynamic voice discovery and rate/volume pass-through. Verified by 606 node tests, 89 focused Python tests, OpenWakeWord probe, SAPI discovery/synthesis, local STT facade execution, and Smart Tutor `ollama/qwen3:4b` resolver/client completion. |
 
 ---
 
@@ -44,7 +45,7 @@ This document is the single source of truth for the current state of Smart Tutor
 
 | Issue | Status | Details |
 | :--- | :--- | :--- |
-| None currently confirmed | RESOLVED | Ollama chat model discovery, exam model routing, and voice recorder transcription were verified on 2026-09-04. |
+| Hands-Free acoustic/manual verification | OPEN | Automated and direct runtime probes passed, but no live spoken "Hey Jarvis" microphone test, browser focus automation test, or NVDA manual verification was performed. Ordinary speech barge-in uses browser RMS activity with echo cancellation/noise suppression constraints requested from `getUserMedia`; dedicated `webrtcvad`/Silero browser-side VAD is not implemented. |
 
 ---
 
@@ -54,6 +55,9 @@ This document is the single source of truth for the current state of Smart Tutor
 - **Embedding Model**: `nomic-embed-text` (768 dimensions) via local Ollama endpoint (`http://localhost:11434/api/embed`).
 - **Active LLM**: `gpt-4.1` via OpenAI-compatible endpoint.
 - **Selectable Local LLMs**: Ollama chat-capable models are discovered on local refresh from `http://localhost:11434/v1`; embedding-only Ollama tags are excluded from LLM selection.
+- **Hands-Free Wake Word**: `Hey Jarvis` only, backed by the installed OpenWakeWord `hey_jarvis_v0.1`/`hey_jarvis` model.
+- **Hands-Free Voice Path**: Browser focus-only microphone loop detects wake word locally, captures one utterance, sends it through existing STT, submits text into the active chat session, then streams speech-ready answer chunks through existing TTS.
+- **Windows SAPI**: Exposed as `windows_speech` / `windows_system_speech` when Windows PowerShell/System.Speech is available. Installed SAPI voices are discovered dynamically; no specific Microsoft voice is hard-coded.
 - **Default Settings Tab**: Student Settings.
 - **Media Generation**: Disabled and removed (Text + Voice tutor only).
 - **Target Remote**: `https://github.com/FunctionSid/smart-tutor.git` (`main`).

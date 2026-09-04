@@ -2,6 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 import json
 from pathlib import Path
 
+from smarttutor.services.config import model_catalog as model_catalog_module
 from smarttutor.services.config.model_catalog import ModelCatalogService
 
 
@@ -111,12 +112,29 @@ def test_load_recovers_invalid_catalog_with_defaults(tmp_path: Path):
         "search",
         "tts",
         "stt",
-        "imagegen",
-        "videogen",
     }
     assert set(catalog["services"]) == expected_services
     saved = json.loads(catalog_path.read_text(encoding="utf-8"))
     assert set(saved["services"]) == expected_services
+
+
+def test_load_exposes_windows_speech_without_hard_coded_voice(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.setattr(model_catalog_module.os, "name", "nt")
+    monkeypatch.setattr(model_catalog_module.shutil, "which", lambda name: "powershell.exe")
+
+    catalog = ModelCatalogService(path=tmp_path / "model_catalog.json").load()
+
+    tts_profiles = catalog["services"]["tts"]["profiles"]
+    sapi = next(profile for profile in tts_profiles if profile["binding"] == "windows_speech")
+    assert sapi["name"] == "Windows SAPI"
+    assert sapi["base_url"] == "powershell"
+    assert sapi["models"][0]["model"] == "system-speech"
+    assert sapi["models"][0]["voice"] == ""
+    assert sapi["models"][0]["speed"] == 0
+    assert sapi["models"][0]["volume"] == 100
 
 
 def _gemini_embedding_catalog(path: Path, model: str) -> Path:

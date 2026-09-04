@@ -63,6 +63,11 @@ import {
   type GenerationAnnouncementSnapshot,
 } from "@/lib/chat-accessibility";
 import {
+  HANDS_FREE_RUNTIME_EVENT,
+  readHandsFreeSettings,
+} from "@/lib/hands-free-settings";
+import { takeSpeechChunk, textForSpeech } from "@/lib/hands-free-speech";
+import {
   AskUserOptions,
   extractAskUserPayload,
   extractMessageSegments,
@@ -1372,6 +1377,13 @@ export const ChatMessageList = memo(function ChatMessageList({
     }
     return -1;
   }, [messageRows]);
+  const activeAssistantContent = useMemo(() => {
+    if (!isStreaming || lastRenderedAssistantIndex < 0) return "";
+    return (
+      messageRows.find((row) => row.originalIndex === lastRenderedAssistantIndex)
+        ?.msg.content ?? ""
+    );
+  }, [isStreaming, lastRenderedAssistantIndex, messageRows]);
 
   // Auto-play (when enabled) must fire only for a reply that JUST finished
   // generating — never when loading history. We capture the last-assistant
@@ -1387,6 +1399,13 @@ export const ChatMessageList = memo(function ChatMessageList({
   const [generationAnnouncement, setGenerationAnnouncement] = useState("");
   const generationAnnouncementRef =
     useRef<GenerationAnnouncementSnapshot | null>(null);
+  const [handsFreeTtsEnabled, setHandsFreeTtsEnabled] = useState(false);
+  const spokenSpeechRef = useRef("");
+  const activeHandsFreeAudioRef = useRef<HTMLAudioElement | null>(null);
+  const activeHandsFreeUrlRef = useRef<string | null>(null);
+  const ttsBusyRef = useRef(false);
+  const ttsGenerationRef = useRef(0);
+  const lastHandsFreeChunkAtRef = useRef(0);
   if (prevSession !== sessionId) {
     setPrevSession(sessionId);
     setPrevStreaming(false);
@@ -1411,6 +1430,92 @@ export const ChatMessageList = memo(function ChatMessageList({
       setGenerationAnnouncement("");
     }
   }, [sessionId, isStreaming]);
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ enabled?: boolean; interrupted?: boolean }>).detail;
+      if (typeof detail?.enabled === "boolean") {
+        setHandsFreeTtsEnabled(detail.enabled);
+      }
+      if (detail?.interrupted || detail?.enabled === false) {
+        ttsGenerationRef.current += 1;
+        activeHandsFreeAudioRef.current?.pause();
+        activeHandsFreeAudioRef.current = null;
+        if (activeHandsFreeUrlRef.current) {
+          URL.revokeObjectURL(activeHandsFreeUrlRef.current);
+          activeHandsFreeUrlRef.current = null;
+        }
+        spokenSpeechRef.current = "";
+        ttsBusyRef.current = false;
+      }
+    };
+    window.addEventListener(HANDS_FREE_RUNTIME_EVENT, handler);
+    return () => window.removeEventListener(HANDS_FREE_RUNTIME_EVENT, handler);
+  }, []);
+  useEffect(() => {
+    if (!handsFreeTtsEnabled) return;
+    if (!isStreaming) {
+      spokenSpeechRef.current = "";
+      return;
+    }
+    if (ttsBusyRef.current) return;
+    const speech = textForSpeech(activeAssistantContent);
+    if (!speech.startsWith(spokenSpeechRef.current)) {
+      spokenSpeechRef.current = "";
+    }
+    const pending = speech.slice(spokenSpeechRef.current.length);
+    const forcePartial = Date.now() - lastHandsFreeChunkAtRef.current > 1800;
+    const next = takeSpeechChunk(pending, forcePartial);
+    if (!next) return;
+    const chunk = next.chunk;
+    spokenSpeechRef.current = speech.slice(0, speech.length - next.remaining.length);
+    lastHandsFreeChunkAtRef.current = Date.now();
+    ttsBusyRef.current = true;
+    const ttsGeneration = ttsGenerationRef.current;
+    void (async () => {
+      try {
+        const settings = readHandsFreeSettings();
+        const resp = await apiFetch(apiUrl("/api/v1/voice/tts"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: chunk,
+            voice: settings.sapiVoice || undefined,
+            speed: settings.speechRate,
+            volume: settings.volume,
+          }),
+        });
+        if (ttsGeneration !== ttsGenerationRef.current) return;
+        if (!resp.ok) return;
+        const blob = await resp.blob();
+        if (ttsGeneration !== ttsGenerationRef.current) return;
+        const url = URL.createObjectURL(blob);
+        activeHandsFreeUrlRef.current = url;
+        const audio = new Audio(url);
+        activeHandsFreeAudioRef.current = audio;
+        window.dispatchEvent(
+          new CustomEvent(HANDS_FREE_RUNTIME_EVENT, {
+            detail: { enabled: true, speaking: true },
+          }),
+        );
+        await audio.play();
+        await new Promise<void>((resolve) => {
+          audio.onended = () => resolve();
+          audio.onerror = () => resolve();
+        });
+        if (activeHandsFreeUrlRef.current === url) {
+          activeHandsFreeUrlRef.current = null;
+        }
+        URL.revokeObjectURL(url);
+        window.dispatchEvent(
+          new CustomEvent(HANDS_FREE_RUNTIME_EVENT, {
+            detail: { enabled: true, speechDone: true },
+          }),
+        );
+      } finally {
+        ttsBusyRef.current = false;
+      }
+    })();
+  }, [activeAssistantContent, handsFreeTtsEnabled, isStreaming]);
 
   return (
     <>

@@ -11,7 +11,7 @@ Key features:
 - Extended timeouts for potentially slower local inference
 """
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping, Sequence
 import json
 import logging
 import re
@@ -29,6 +29,22 @@ from .utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _collect_ollama_chat_model_names(entries: Sequence[object]) -> list[str]:
+    """Return Ollama tags that can serve chat/completion requests."""
+    names: list[str] = []
+    for entry in entries:
+        if isinstance(entry, Mapping):
+            capabilities = entry.get("capabilities")
+            if isinstance(capabilities, list):
+                normalized = {str(item).strip().lower() for item in capabilities}
+                if "completion" not in normalized and "chat" not in normalized:
+                    continue
+        name = collect_model_names([entry])
+        if name:
+            names.extend(name)
+    return names
 
 
 class _ThinkingBlockParser:
@@ -411,7 +427,7 @@ async def fetch_models(
                     if resp.status == 200:
                         data = await resp.json()
                         if "models" in data:
-                            return collect_model_names(data["models"])
+                            return _collect_ollama_chat_model_names(data["models"])
             except Exception as exc:
                 logger.debug(
                     "Failed to fetch Ollama models from %s: %s",

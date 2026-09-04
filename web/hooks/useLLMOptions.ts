@@ -62,7 +62,7 @@ export function useLLMOptions() {
   );
 
   useEffect(() => {
-    void refresh();
+    void refresh({ refreshLocal: true });
   }, [refresh]);
 
   return {

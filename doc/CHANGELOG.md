@@ -158,6 +158,32 @@ Entries are appended in chronological order. Past entries are never modified.
 - Inspected the backend model options endpoint (`/api/v1/settings/llm-options`) in `smarttutor/api/routers/settings.py` and `smarttutor/services/model_selection/llm.py`.
 - Inspected the frontend chat model selector components (`ModelSelector.tsx`, `ChatComposer.tsx`, and `useLLMOptions.ts`).
 - Traced the complete model selection runtime path from frontend selection to backend `turn_runtime.py`, `provider_runtime.py`, and `LLMClient`.
+
+---
+
+## 2026-09-04 - Ollama/OpenAI Model Selection and Voice STT Verification
+
+### What was changed
+- Updated `/api/v1/settings/llm-options?refresh_local=true` so local refresh auto-seeds a missing Ollama LLM profile before discovery.
+- Filtered Ollama `/api/tags` discovery to include chat/completion-capable models and exclude embedding-only tags such as `nomic-embed-text`.
+- Changed the main chat model-options hook to request local discovery on initial load, so Ollama models appear without requiring a manual refresh.
+- Added the shared model selector to the autonomous exam generator modal and submit `llm_selection` to `/api/v1/exam/generate`.
+- Updated exam generation to resolve the selected request-scoped LLM config per exam request instead of reusing a stale/global graph client.
+- Added regressions for missing Ollama profile seeding, empty Ollama discovery, Ollama embedding-tag filtering, and exam selected-model resolution.
+
+### What was verified
+- `ollama list` found 9 installed local models, and `http://localhost:11434/api/tags` was reachable.
+- Live backend options endpoint returned OpenAI `gpt-4.1` plus 8 chat-capable Ollama models; `nomic-embed-text` was excluded from LLM options.
+- Microsoft Edge verified `/home` initially requests `/api/v1/settings/llm-options?refresh_local=true`, shows `Local · Ollama`, and selects `qwen3:4b`.
+- Microsoft Edge payload verification confirmed chat and exam generation both submit the same selected Ollama `{profile_id, model_id}`.
+- Microsoft Edge voice verification used a generated WAV as fake microphone input; the recorder posted through `/api/v1/voice/stt`, inserted the transcript into the composer, and announced `Transcription complete.`.
+- `.\.venv\Scripts\python.exe -m pytest tests/services/llm/test_local_provider.py tests/api/test_settings_router.py::test_llm_options_refresh_seeds_missing_ollama_profile tests/api/test_settings_router.py::test_llm_options_refresh_does_not_persist_empty_ollama_profile tests/exam/test_exam_graph.py::test_exam_graph_resolves_selected_llm tests/services/model_selection/test_llm_selection.py -q` passed: 12 tests.
+- `npm run test:node -- llm-options` passed: 589 node tests.
+- `npx tsc --noEmit` passed with zero TypeScript errors.
+- `git diff --check` passed.
+
+### What broke / Known issues
+- The global system Python has a broken pytest installation (`ModuleNotFoundError: No module named '_pytest.cacheprovider'`). The project `.venv` pytest works and was used for verification.
 - Tested direct local completion using `AsyncOpenAI` against `http://localhost:11434/v1` and verified Smart Tutor's internal `LLMClient` with a scoped Ollama configuration.
 
 ### What was found
@@ -178,7 +204,6 @@ Entries are appended in chronological order. Past entries are never modified.
 1. Add or auto-seed an Ollama profile in `model_catalog.json` under `"llm"` with `binding: "ollama"` and `base_url: "http://localhost:11434/v1"`.
 2. Update `_refresh_ollama_llm_profiles` so that if Ollama is reachable at `http://localhost:11434` and no Ollama profile exists in `"llm"`, it automatically creates one and populates its models.
 3. Allow the frontend `useLLMOptions` to refresh local models or discover them automatically on initial load.
-
 
 
 

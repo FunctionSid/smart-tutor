@@ -354,14 +354,37 @@ def _catalog_model_entry(model_name: str, existing: dict[str, Any] | None, index
 async def _refresh_ollama_llm_profiles(catalog: dict[str, Any]) -> dict[str, Any]:
     """Discover installed Ollama chat models and merge them into LLM profiles."""
     from smarttutor.services.llm.factory import fetch_models as fetch_llm_models
-    from smarttutor.services.provider_registry import canonical_provider_name
+    from smarttutor.services.provider_registry import canonical_provider_name, find_by_name
 
-    llm_service = catalog.get("services", {}).get("llm", {})
+    services = catalog.setdefault("services", {})
+    llm_service = services.setdefault("llm", {})
     profiles = llm_service.get("profiles", [])
+    if not isinstance(profiles, list):
+        profiles = []
+        llm_service["profiles"] = profiles
     statuses: list[dict[str, Any]] = []
     changed = False
 
-    for profile in profiles if isinstance(profiles, list) else []:
+    if not any(
+        isinstance(profile, dict)
+        and canonical_provider_name(str(profile.get("binding") or "")) == "ollama"
+        for profile in profiles
+    ):
+        spec = find_by_name("ollama")
+        profiles.append(
+            {
+                "id": "llm-profile-ollama-local",
+                "name": "Ollama",
+                "binding": "ollama",
+                "base_url": spec.default_api_base if spec else "http://localhost:11434/v1",
+                "api_key": "",
+                "api_version": "",
+                "extra_headers": {},
+                "models": [],
+            }
+        )
+
+    for profile in profiles:
         if not isinstance(profile, dict):
             continue
         if canonical_provider_name(str(profile.get("binding") or "")) != "ollama":

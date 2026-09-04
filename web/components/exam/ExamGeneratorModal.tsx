@@ -1,8 +1,11 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Plus, Loader2, Sparkles, Database, BookOpen, Clock, BarChart } from "lucide-react";
+import { Loader2, Sparkles } from "lucide-react";
 import Modal from "@/components/common/Modal";
+import ModelSelector from "@/components/chat/home/ModelSelector";
+import { useLLMOptions } from "@/hooks/useLLMOptions";
+import type { LLMSelection } from "@/lib/unified-ws";
 
 interface ExamGeneratorModalProps {
   isOpen: boolean;
@@ -19,6 +22,19 @@ export default function ExamGeneratorModal({ isOpen, onClose, onGenerated }: Exa
   const [availableKbs, setAvailableKbs] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const {
+    options: llmOptions,
+    activeDefault,
+    loading: llmOptionsLoading,
+    error: llmOptionsError,
+    refresh: refreshLLMOptions,
+  } = useLLMOptions();
+  const [llmSelection, setLLMSelection] = useState<LLMSelection | null>(null);
+
+  useEffect(() => {
+    if (llmSelection || !activeDefault) return;
+    setLLMSelection(activeDefault);
+  }, [activeDefault, llmSelection]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -59,6 +75,7 @@ export default function ExamGeneratorModal({ isOpen, onClose, onGenerated }: Exa
           num_questions: numQuestions,
           difficulty,
           time_limit_minutes: timeLimit,
+          llm_selection: llmSelection,
         }),
       });
 
@@ -189,6 +206,25 @@ export default function ExamGeneratorModal({ isOpen, onClose, onGenerated }: Exa
               <option value="medium">Medium</option>
               <option value="hard">Hard</option>
             </select>
+          </div>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400">
+            Model
+          </label>
+          <div className="flex">
+            <ModelSelector
+              options={llmOptions}
+              activeDefault={activeDefault}
+              value={llmSelection}
+              loading={llmOptionsLoading}
+              error={llmOptionsError}
+              onChange={setLLMSelection}
+              onRefresh={() =>
+                void refreshLLMOptions({ force: true, refreshLocal: true })
+              }
+            />
           </div>
         </div>
 

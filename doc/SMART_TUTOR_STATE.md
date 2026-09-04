@@ -1,6 +1,6 @@
 # Smart Tutor State (Living Source of Truth)
 
-Last updated: 2026-09-03 09:48 IST
+Last updated: 2026-09-04 12:09 IST
 
 This document is the single source of truth for the current state of Smart Tutor. It records only verified facts, confirmed working features, confirmed broken issues, and active configuration. Speculative or unverified claims are not kept here.
 
@@ -32,8 +32,10 @@ This document is the single source of truth for the current state of Smart Tutor
 | Live Browser RAG Pipeline | VERIFIED | End-to-end browser test uploaded `audit_physics_sample.pdf`, indexed via LlamaIndex + Ollama `nomic-embed-text`, bound to chat session, and answered factual and cross-referencing questions with citations. |
 | Prompt Injection Resistance | VERIFIED | Model ignored embedded override instruction in indexed document and answered with grounded facts while citing the source PDF. |
 | Voice Diagnostics (`faster-whisper`) | VERIFIED | `faster-whisper` v1.2.1 verified working with 45s probe timeout to eliminate Windows cold-start DLL loading timeouts. |
+| Voice Recording and Transcription | VERIFIED | Microsoft Edge browser recording verified with fake microphone WAV input. The recorder posted through `/api/v1/voice/stt`, inserted transcript text into the chat composer, and announced `Transcription complete.` through the live region. |
 | Local MCP Server & Tools | VERIFIED | Local MCP server implemented in `mcp_server/server.py` and launcher `start-mcp.bat`. Provides `list_study_files`, `read_study_file`, and `calculate`. Smart Tutor MCP manager connects to `http://127.0.0.1:8765/sse` and reports `status: "connected"` via `/api/v1/settings/mcp` and `/api/v1/space/mcp/servers`. Direct tool execution tested and verified. |
-| Chat Model Selection (Ollama vs OpenAI) | INVESTIGATED / PARTIAL | Main chat model selector currently only lists `gpt-4.1` (OpenAI). Ollama is running with 9 models and its OpenAI endpoint is verified working, but `model_catalog.json` lacks an Ollama LLM profile, and discovery does not auto-create missing profiles. Feasibility confirmed. |
+| Chat Model Selection (Ollama vs OpenAI) | VERIFIED | `/api/v1/settings/llm-options?refresh_local=true` auto-seeds the missing Ollama LLM profile, discovers 8 chat-capable local Ollama models, keeps OpenAI `gpt-4.1` as the active default, and excludes embedding-only `nomic-embed-text`. Microsoft Edge verified initial chat selector loading requests local refresh and can select `qwen3:4b` under `Local · Ollama`. |
+| Exam Model Selection | VERIFIED | Exam generation modal now uses the shared LLM selector and submits the selected `{profile_id, model_id}` to `/api/v1/exam/generate`. Backend exam generation resolves the same request-scoped LLM config as chat. Microsoft Edge payload verification confirmed chat and exam send identical selected Ollama IDs. |
 
 ---
 
@@ -41,7 +43,7 @@ This document is the single source of truth for the current state of Smart Tutor
 
 | Issue | Status | Details |
 | :--- | :--- | :--- |
-| Ollama models not appearing in main chat selector | CONFIRMED | `data/user/settings/model_catalog.json` only contains an OpenAI profile under `services.llm`. The discovery handler `_refresh_ollama_llm_profiles` only queries Ollama if a profile with `binding: "ollama"` is already configured. Auto-seeding of the Ollama LLM profile is missing. |
+| None currently confirmed | RESOLVED | Ollama chat model discovery, exam model routing, and voice recorder transcription were verified on 2026-09-04. |
 
 ---
 
@@ -50,6 +52,7 @@ This document is the single source of truth for the current state of Smart Tutor
 - **Default RAG Provider**: LlamaIndex (`rag_provider: llamaindex`, `search_mode: hybrid`).
 - **Embedding Model**: `nomic-embed-text` (768 dimensions) via local Ollama endpoint (`http://localhost:11434/api/embed`).
 - **Active LLM**: `gpt-4.1` via OpenAI-compatible endpoint.
+- **Selectable Local LLMs**: Ollama chat-capable models are discovered on local refresh from `http://localhost:11434/v1`; embedding-only Ollama tags are excluded from LLM selection.
 - **Default Settings Tab**: Student Settings.
 - **Media Generation**: Disabled and removed (Text + Voice tutor only).
 - **Target Remote**: `https://github.com/FunctionSid/smart-tutor.git` (`main`).

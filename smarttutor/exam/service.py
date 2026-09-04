@@ -25,7 +25,6 @@ class ExamService:
         self.attempts_dir = self.root / "attempts"
         self.root.mkdir(parents=True, exist_ok=True)
         self.attempts_dir.mkdir(parents=True, exist_ok=True)
-        self.graph = ExamGraph()
         self.learning_service = LearningService()
 
     async def create_exam(
@@ -35,6 +34,7 @@ class ExamService:
         num_questions: int = 5,
         difficulty: str = "medium",
         time_limit_minutes: Optional[int] = None,
+        llm_selection: dict[str, str] | None = None,
     ) -> ExamSpec:
         state = ExamGraphState(
             topic=topic,
@@ -43,7 +43,7 @@ class ExamService:
             difficulty=difficulty,
             time_limit_minutes=time_limit_minutes,
         )
-        exam = await self.graph.execute(state)
+        exam = await ExamGraph(llm_selection=llm_selection).execute(state)
         self._save_exam(exam)
         return exam
 

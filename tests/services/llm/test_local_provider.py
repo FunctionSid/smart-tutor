@@ -130,3 +130,16 @@ async def test_sse_stream_uses_the_same_thinking_filter(
     ]
 
     assert "".join(visible) == "before after"
+
+
+def test_ollama_model_discovery_skips_embedding_only_tags() -> None:
+    entries = [
+        {"name": "qwen3:8b", "capabilities": ["completion", "tools"]},
+        {"name": "nomic-embed-text:latest", "capabilities": ["embedding"]},
+        {"name": "legacy-local-model"},
+    ]
+
+    assert local_provider._collect_ollama_chat_model_names(entries) == [
+        "qwen3:8b",
+        "legacy-local-model",
+    ]

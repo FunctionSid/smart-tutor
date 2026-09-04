@@ -1,5 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, patch
+from smarttutor.services.llm.config import LLMConfig
 from smarttutor.exam.graph import ExamGraph, ExamGraphState
 from smarttutor.exam.models import Citation, ExamQuestion
 
@@ -70,3 +71,35 @@ async def test_guardrail_accepts_clean_question():
         assert validation.has_single_correct
         assert validation.no_all_or_none
         assert validation.citation_grounded
+
+
+def test_exam_graph_resolves_selected_llm(monkeypatch):
+    from smarttutor.exam import graph as graph_module
+
+    selection = {"profile_id": "ollama-profile", "model_id": "llama-model"}
+    seen = {}
+
+    def _resolve(value):
+        seen["selection"] = value
+        return LLMConfig(
+            model="llama3.2:latest",
+            api_key="sk-no-key-required",
+            base_url="http://localhost:11434/v1",
+            binding="ollama",
+            provider_name="ollama",
+            provider_mode="local",
+        )
+
+    def _client(config):
+        seen["client_config"] = config
+        return object()
+
+    monkeypatch.setattr(graph_module, "resolve_llm_config_for_selection", _resolve)
+    monkeypatch.setattr(graph_module, "build_openai_client", _client)
+
+    graph = ExamGraph(llm_selection=selection)
+
+    assert seen["selection"] == selection
+    assert graph.model_name == "llama3.2:latest"
+    assert seen["client_config"].binding == "ollama"
+    assert seen["client_config"].base_url == "http://localhost:11434/v1"

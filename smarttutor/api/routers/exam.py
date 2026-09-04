@@ -17,6 +17,7 @@ class GenerateExamRequest(BaseModel):
     num_questions: int = 5
     difficulty: str = "medium"
     time_limit_minutes: Optional[int] = None
+    llm_selection: Optional[dict[str, str]] = None
 
 
 @router.post("/generate", response_model=ExamSpec)
@@ -34,6 +35,7 @@ async def generate_exam(req: GenerateExamRequest) -> ExamSpec:
         num_questions=req.num_questions,
         difficulty=req.difficulty,
         time_limit_minutes=req.time_limit_minutes,
+        llm_selection=req.llm_selection,
     )
     sanitized = _service.get_exam(exam.exam_id, hide_answers=True)
     if sanitized is None:

@@ -1053,6 +1053,82 @@ async def test_fetch_models_returns_picker_options(monkeypatch: pytest.MonkeyPat
 
 
 @pytest.mark.asyncio
+async def test_llm_options_refresh_seeds_missing_ollama_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import smarttutor.services.llm.factory as factory_module
+
+    catalog = _build_catalog(
+        llm_model="gpt-4.1",
+        llm_base_url="https://api.openai.com/v1",
+        llm_api_key="sk-openai",
+        embedding_model="nomic-embed-text",
+        embedding_base_url="http://localhost:11434/api/embeddings",
+        embedding_api_key="",
+    )
+    service = _FakeCatalogService(catalog)
+    monkeypatch.setattr(settings_router, "get_model_catalog_service", lambda: service)
+    monkeypatch.setattr(
+        settings_router,
+        "get_current_user",
+        lambda: SimpleNamespace(id="root", is_admin=True),
+    )
+    monkeypatch.setattr(settings_router, "_invalidate_runtime_caches", lambda: None)
+
+    async def _fake_fetch(binding: str, base_url: str, api_key: str | None = None):
+        assert (binding, base_url, api_key) == ("ollama", "http://localhost:11434/v1", None)
+        return ["llama3.2:latest", "qwen2.5:7b"]
+
+    monkeypatch.setattr(factory_module, "fetch_models", _fake_fetch)
+
+    payload = await settings_router.get_llm_options(refresh_local=True)
+
+    assert payload["active"] == {"profile_id": "llm-profile-default", "model_id": "llm-model-default"}
+    assert payload["local_statuses"][0]["ok"] is True
+    ollama_options = [option for option in payload["options"] if option["provider"] == "ollama"]
+    assert [option["model"] for option in ollama_options] == ["llama3.2:latest", "qwen2.5:7b"]
+    assert all(option["provider_category"] == "local" for option in ollama_options)
+    stored = service.load()
+    assert stored["services"]["embedding"] == catalog["services"]["embedding"]
+
+
+@pytest.mark.asyncio
+async def test_llm_options_refresh_does_not_persist_empty_ollama_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import smarttutor.services.llm.factory as factory_module
+
+    catalog = _build_catalog(
+        llm_model="gpt-4.1",
+        llm_base_url="https://api.openai.com/v1",
+        llm_api_key="sk-openai",
+        embedding_model="nomic-embed-text",
+        embedding_base_url="http://localhost:11434/api/embeddings",
+        embedding_api_key="",
+    )
+    service = _FakeCatalogService(catalog)
+    monkeypatch.setattr(settings_router, "get_model_catalog_service", lambda: service)
+    monkeypatch.setattr(
+        settings_router,
+        "get_current_user",
+        lambda: SimpleNamespace(id="root", is_admin=True),
+    )
+    monkeypatch.setattr(settings_router, "_invalidate_runtime_caches", lambda: None)
+
+    async def _fake_fetch(binding: str, base_url: str, api_key: str | None = None):
+        return []
+
+    monkeypatch.setattr(factory_module, "fetch_models", _fake_fetch)
+
+    payload = await settings_router.get_llm_options(refresh_local=True)
+
+    assert payload["local_statuses"][0]["ok"] is False
+    assert all(option["provider"] != "ollama" for option in payload["options"])
+    stored = service.load()
+    assert [profile["binding"] for profile in stored["services"]["llm"]["profiles"]] == ["openai"]
+
+
+@pytest.mark.asyncio
 async def test_fetch_models_resolves_masked_key_server_side(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

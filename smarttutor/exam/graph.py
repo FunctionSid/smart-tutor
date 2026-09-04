@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from smarttutor.core.agentic import build_openai_client
 from smarttutor.exam.models import Citation, ExamQuestion, ExamSpec, QuestionValidation
-from smarttutor.services.llm import get_llm_config
+from smarttutor.services.model_selection.runtime import resolve_llm_config_for_selection
 from smarttutor.tools.rag_tool import rag_search
 
 logger = logging.getLogger(__name__)
@@ -35,9 +35,10 @@ class ExamGraphState(BaseModel):
 
 
 class ExamGraph:
-    def __init__(self) -> None:
+    def __init__(self, llm_selection: dict[str, Any] | None = None) -> None:
         from smarttutor.core.agentic import LLMClientConfig
-        self.llm_config = get_llm_config()
+
+        self.llm_config = resolve_llm_config_for_selection(llm_selection)
         self.model_name = getattr(self.llm_config, "model", None) or "gpt-4.1"
         client_config = LLMClientConfig(
             binding=getattr(self.llm_config, "binding", "openai"),

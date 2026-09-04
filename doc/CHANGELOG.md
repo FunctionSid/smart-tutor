@@ -205,6 +205,29 @@ Entries are appended in chronological order. Past entries are never modified.
 2. Update `_refresh_ollama_llm_profiles` so that if Ollama is reachable at `http://localhost:11434` and no Ollama profile exists in `"llm"`, it automatically creates one and populates its models.
 3. Allow the frontend `useLLMOptions` to refresh local models or discover them automatically on initial load.
 
+---
 
+## 2026-09-04 - Chat Streaming Screen Reader Announcement Fix
+
+### What was changed
+- Removed `aria-live`/`aria-atomic` from the rapidly changing assistant response container while preserving `role="article"` so completed answers remain normal navigable document content.
+- Added a dedicated chat generation announcement helper and hidden `role="status"` region that announces only `Smart Tutor is generating a response.` when streaming starts and `Response complete.` when streaming ends.
+- Removed live-region semantics from the Smart Tutor activity/status timer row and marked the visual elapsed duration `aria-hidden="true"` so the one-second timer does not change the row's accessible name.
+- Kept Qwen/Ollama `<think>` rendering visible in `ModelThinkingCard` and marked the card `aria-live="off"` so streamed thinking tokens are not treated as live announcements.
+- Added focused web regression tests covering streamed-answer live-region removal, timer live-region removal, Qwen thinking announcement behavior, discrete start/complete announcements, no per-event announcements, final answer accessibility, and existing voice announcement preservation.
+
+### What was verified
+- `npm run test:node` passed with 597 node tests, including the new chat accessibility regression tests.
+- `npx tsc --noEmit` passed with zero TypeScript errors.
+- `.\.venv\Scripts\python.exe -m pytest tests\exam -q` passed with 10 tests, confirming Exam Mode was not affected.
+- `git diff --check` passed.
+- Changed frontend files passed targeted ESLint with zero errors/warnings.
+- Live Microsoft Edge automation selected `Local · Ollama · qwen3:4b`, sent real chat prompts through the running app, and observed only the coarse generation start/completion live messages; the final assistant `role="article"` had no `aria-live`/`aria-atomic` attributes.
+- Live Microsoft Edge automation selected OpenAI `gpt-4.1`; the request reached the provider path and returned `429 credit_balance_exhausted`, while the UI still emitted the coarse generation start/completion messages.
+
+### What broke / Known issues
+- NVDA + Microsoft Edge verification was not performed during this change.
+- Full `npm run lint` currently crashes on Windows with exit code `-1073741819` before printing diagnostics; targeted lint of all changed frontend files passes.
+- OpenAI streaming answer verification is blocked by exhausted API credits on the configured account.
 
 

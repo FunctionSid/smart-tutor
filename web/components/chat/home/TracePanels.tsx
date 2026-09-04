@@ -2360,7 +2360,10 @@ export function StreamingStatus({
       ) : null}
       <span className={breathingClass}>{label}</span>
       {durationLabel ? (
-        <span className="text-[12px] font-medium tabular-nums text-[var(--muted-foreground)]/55">
+        <span
+          aria-hidden="true"
+          className="text-[12px] font-medium tabular-nums text-[var(--muted-foreground)]/55"
+        >
           · {durationLabel}
         </span>
       ) : null}
@@ -2375,7 +2378,6 @@ export function StreamingStatus({
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
-        aria-live="polite"
         className={`group/act flex w-full items-center gap-2.5 text-[14px] font-semibold leading-none transition-colors hover:text-[var(--foreground)] ${textColor} ${className}`}
       >
         {rowInner}
@@ -2390,13 +2392,8 @@ export function StreamingStatus({
     );
   }
 
-  // aria-live="polite" surfaces mode transitions to screen readers without
-  // barging in on the user.
   return (
     <div
-      role="status"
-      aria-live="polite"
-      aria-atomic="false"
       className={`flex items-center gap-2.5 text-[14px] font-semibold leading-none ${textColor} ${className}`}
     >
       {rowInner}

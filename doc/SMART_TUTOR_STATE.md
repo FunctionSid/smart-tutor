@@ -1,6 +1,6 @@
 # Smart Tutor State (Living Source of Truth)
 
-Last updated: 2026-09-04 12:09 IST
+Last updated: 2026-09-04 14:55 IST
 
 This document is the single source of truth for the current state of Smart Tutor. It records only verified facts, confirmed working features, confirmed broken issues, and active configuration. Speculative or unverified claims are not kept here.
 
@@ -36,6 +36,7 @@ This document is the single source of truth for the current state of Smart Tutor
 | Local MCP Server & Tools | VERIFIED | Local MCP server implemented in `mcp_server/server.py` and launcher `start-mcp.bat`. Provides `list_study_files`, `read_study_file`, and `calculate`. Smart Tutor MCP manager connects to `http://127.0.0.1:8765/sse` and reports `status: "connected"` via `/api/v1/settings/mcp` and `/api/v1/space/mcp/servers`. Direct tool execution tested and verified. |
 | Chat Model Selection (Ollama vs OpenAI) | VERIFIED | `/api/v1/settings/llm-options?refresh_local=true` auto-seeds the missing Ollama LLM profile, discovers 8 chat-capable local Ollama models, keeps OpenAI `gpt-4.1` as the active default, and excludes embedding-only `nomic-embed-text`. Microsoft Edge verified initial chat selector loading requests local refresh and can select `qwen3:4b` under `Local · Ollama`. |
 | Exam Model Selection | VERIFIED | Exam generation modal now uses the shared LLM selector and submits the selected `{profile_id, model_id}` to `/api/v1/exam/generate`. Backend exam generation resolves the same request-scoped LLM config as chat. Microsoft Edge payload verification confirmed chat and exam send identical selected Ollama IDs. |
+| Chat Streaming Screen Reader Announcements | VERIFIED | Streaming assistant text is normal `role="article"` content instead of an `aria-live` region. A dedicated hidden `role="status"` announces only `Smart Tutor is generating a response.` and `Response complete.`. The visual elapsed timer remains visible but is removed from live regions and hidden from the status accessible name. Qwen `<think>` cards remain visible and keyboard-accessible with `aria-live="off"`. Verified by `npm run test:node` with 597 passing node tests and live Microsoft Edge automation against Ollama `qwen3:4b`; NVDA manual verification was not performed. |
 
 ---
 

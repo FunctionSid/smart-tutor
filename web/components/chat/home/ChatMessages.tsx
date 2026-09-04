@@ -57,6 +57,12 @@ import { shouldSubmitOnEnter } from "@/lib/composer-keyboard";
 import { useImeComposing } from "@/lib/use-ime-composing";
 import type { SpaceMemoryFile } from "@/lib/space-items";
 import {
+  GENERATION_COMPLETE_ANNOUNCEMENT,
+  GENERATION_START_ANNOUNCEMENT,
+  getGenerationAnnouncement,
+  type GenerationAnnouncementSnapshot,
+} from "@/lib/chat-accessibility";
+import {
   AskUserOptions,
   extractAskUserPayload,
   extractMessageSegments,
@@ -1378,6 +1384,9 @@ export const ChatMessageList = memo(function ChatMessageList({
   const [freshlyCompletedIndex, setFreshlyCompletedIndex] = useState<
     number | null
   >(null);
+  const [generationAnnouncement, setGenerationAnnouncement] = useState("");
+  const generationAnnouncementRef =
+    useRef<GenerationAnnouncementSnapshot | null>(null);
   if (prevSession !== sessionId) {
     setPrevSession(sessionId);
     setPrevStreaming(false);
@@ -1388,9 +1397,35 @@ export const ChatMessageList = memo(function ChatMessageList({
       setFreshlyCompletedIndex(lastRenderedAssistantIndex);
     }
   }
+  useEffect(() => {
+    const next = { sessionId, isStreaming };
+    const previous = generationAnnouncementRef.current;
+    const result = getGenerationAnnouncement(
+      previous,
+      next,
+    );
+    generationAnnouncementRef.current = result.snapshot;
+    if (result.message) {
+      setGenerationAnnouncement(result.message);
+    } else if (previous?.sessionId !== sessionId && !isStreaming) {
+      setGenerationAnnouncement("");
+    }
+  }, [sessionId, isStreaming]);
 
   return (
     <>
+      <span
+        className="sr-only"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {generationAnnouncement === GENERATION_START_ANNOUNCEMENT
+          ? t(GENERATION_START_ANNOUNCEMENT)
+          : generationAnnouncement === GENERATION_COMPLETE_ANNOUNCEMENT
+            ? t(GENERATION_COMPLETE_ANNOUNCEMENT)
+            : ""}
+      </span>
       {messageRows.map(({ msg, originalIndex, pairedUserMessage }) => {
         const i = originalIndex;
         if (msg.role === "user") {

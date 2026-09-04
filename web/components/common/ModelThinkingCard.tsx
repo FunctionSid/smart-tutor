@@ -66,6 +66,7 @@ export default function ModelThinkingCard({
     <details
       ref={detailsRef}
       onToggle={handleToggle}
+      aria-live="off"
       className="group/think my-3 overflow-hidden rounded-xl border border-[var(--border)]/60 bg-[var(--card)]/40 transition-colors hover:border-[var(--border)]"
     >
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-[12px] font-medium text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)] [&::-webkit-details-marker]:hidden">

@@ -35,6 +35,7 @@ from smarttutor.services.memory.consolidator.meta import (
 )
 from smarttutor.services.memory.consolidator.modes._runtime import (
     OnEvent,
+    activate_run_llm_selection,
     call_llm,
     emit,
     load_doc,
@@ -94,21 +95,13 @@ async def run_update(
     every internal :func:`call_llm` resolves to the right provider.
     """
     from smarttutor.services.model_selection.runtime import (
-        activate_llm_selection,
         reset_llm_selection,
     )
 
     settings = load_memory_settings()
     token = None
-    if llm_selection:
-        try:
-            _config, token = activate_llm_selection(llm_selection)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "memory update: ignoring unresolvable llm_selection %s: %s", llm_selection, exc
-            )
-            token = None
     try:
+        token = await activate_run_llm_selection(llm_selection, on_event=on_event)
         if layer == "L2":
             return await _run_update_l2(
                 key,  # type: ignore[arg-type]

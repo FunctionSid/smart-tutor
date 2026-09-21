@@ -13,6 +13,7 @@ from smarttutor.services.config.provider_runtime import (
     ResolvedEmbeddingConfig,
     ResolvedLLMConfig,
 )
+from smarttutor.services.config.model_catalog import clear_model_discovery_cache
 from smarttutor.services.config.runtime_settings import RuntimeSettingsService
 from smarttutor.services.embedding import client as embedding_client_module
 from smarttutor.services.embedding import config as embedding_config_module
@@ -580,6 +581,14 @@ def test_llm_provider_choices_include_edenai() -> None:
     assert llm["edenai"]["base_url"] == "https://api.edenai.run/v3"
 
 
+def test_llm_provider_choices_include_krutrim() -> None:
+    llm = {item["value"]: item for item in settings_router._provider_choices()["llm"]}
+
+    assert llm["krutrim"]["label"] == "Krutrim Cloud"
+    assert llm["krutrim"]["base_url"] == "https://cloud.olakrutrim.com/v1"
+    assert llm["krutrim"]["auth_mode"] == "api_key"
+
+
 def test_voice_provider_choices_include_global_engines() -> None:
     choices = settings_router._provider_choices()
     tts = {item["value"]: item for item in choices["tts"]}
@@ -1058,6 +1067,7 @@ async def test_llm_options_refresh_seeds_missing_ollama_profile(
 ) -> None:
     import smarttutor.services.llm.factory as factory_module
 
+    clear_model_discovery_cache()
     catalog = _build_catalog(
         llm_model="gpt-4.1",
         llm_base_url="https://api.openai.com/v1",
@@ -1090,6 +1100,7 @@ async def test_llm_options_refresh_seeds_missing_ollama_profile(
     assert all(option["provider_category"] == "local" for option in ollama_options)
     stored = service.load()
     assert stored["services"]["embedding"] == catalog["services"]["embedding"]
+    clear_model_discovery_cache()
 
 
 @pytest.mark.asyncio
@@ -1098,6 +1109,9 @@ async def test_llm_options_refresh_does_not_persist_empty_ollama_profile(
 ) -> None:
     import smarttutor.services.llm.factory as factory_module
 
+    clear_model_discovery_cache()
+    monkeypatch.delenv("KRUTRIM_API_KEY", raising=False)
+    monkeypatch.delenv("KRUTRIM_CLOUD_API_KEY", raising=False)
     catalog = _build_catalog(
         llm_model="gpt-4.1",
         llm_base_url="https://api.openai.com/v1",
@@ -1126,6 +1140,59 @@ async def test_llm_options_refresh_does_not_persist_empty_ollama_profile(
     assert all(option["provider"] != "ollama" for option in payload["options"])
     stored = service.load()
     assert [profile["binding"] for profile in stored["services"]["llm"]["profiles"]] == ["openai"]
+    clear_model_discovery_cache()
+
+
+@pytest.mark.asyncio
+async def test_llm_options_refresh_seeds_krutrim_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import smarttutor.services.llm.factory as factory_module
+
+    clear_model_discovery_cache()
+    catalog = _build_catalog(
+        llm_model="gpt-4.1",
+        llm_base_url="https://api.openai.com/v1",
+        llm_api_key="sk-openai",
+        embedding_model="nomic-embed-text",
+        embedding_base_url="http://localhost:11434/api/embeddings",
+        embedding_api_key="",
+    )
+    service = _FakeCatalogService(catalog)
+    monkeypatch.setenv("KRUTRIM_API_KEY", "krutrim-env-key")
+    monkeypatch.setattr(settings_router, "get_model_catalog_service", lambda: service)
+    monkeypatch.setattr(
+        settings_router,
+        "get_current_user",
+        lambda: SimpleNamespace(id="root", is_admin=True),
+    )
+    monkeypatch.setattr(settings_router, "_invalidate_runtime_caches", lambda: None)
+
+    async def _fake_fetch(binding: str, base_url: str, api_key: str | None = None):
+        if binding == "ollama":
+            return []
+        assert (binding, base_url, api_key) == (
+            "krutrim",
+            "https://cloud.olakrutrim.com/v1",
+            "krutrim-env-key",
+        )
+        return ["gpt-oss-20b", "GLM-5.3-Flash"]
+
+    monkeypatch.setattr(factory_module, "fetch_models", _fake_fetch)
+
+    payload = await settings_router.get_llm_options(refresh_local=True)
+
+    krutrim_options = [option for option in payload["options"] if option["provider"] == "krutrim"]
+    assert [option["model"] for option in krutrim_options] == ["gpt-oss-20b", "GLM-5.3-Flash"]
+    assert all(option["provider_category"] == "cloud" for option in krutrim_options)
+    stored_profile = next(
+        profile
+        for profile in service.load()["services"]["llm"]["profiles"]
+        if profile["binding"] == "krutrim"
+    )
+    assert stored_profile["api_key"] == ""
+    assert stored_profile["base_url"] == "https://cloud.olakrutrim.com/v1"
+    clear_model_discovery_cache()
 
 
 @pytest.mark.asyncio

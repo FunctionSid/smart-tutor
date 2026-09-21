@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+from pathlib import Path
 import shutil
 import subprocess
 import tempfile
@@ -23,6 +24,17 @@ def _global_python() -> str:
         found = shutil.which(configured) or configured
         if os.path.exists(found):
             return found
+    try:
+        from smarttutor.services.config.provider_runtime import resolve_stt_runtime_config
+
+        stt_config = resolve_stt_runtime_config()
+        candidate = (stt_config.base_url or "").strip()
+        if stt_config.adapter.startswith("global_") and candidate:
+            expanded = Path(os.path.expandvars(os.path.expanduser(candidate)))
+            if expanded.exists():
+                return str(expanded)
+    except Exception:
+        pass
     found = shutil.which("python")
     if not found:
         raise VoiceProviderError("Global Python is required for OpenWakeWord inference.")

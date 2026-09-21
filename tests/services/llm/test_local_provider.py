@@ -48,6 +48,7 @@ class _FakeStreamResponse:
 class _FakeSession:
     def __init__(self, response: _FakeStreamResponse) -> None:
         self._response = response
+        self.posts: list[dict[str, object]] = []
 
     async def __aenter__(self):
         return self
@@ -61,6 +62,7 @@ class _FakeSession:
         return None
 
     def post(self, _url: str, **_kwargs: object) -> _FakeStreamResponse:
+        self.posts.append(_kwargs)
         return self._response
 
 
@@ -130,6 +132,82 @@ async def test_sse_stream_uses_the_same_thinking_filter(
     ]
 
     assert "".join(visible) == "before after"
+
+
+@pytest.mark.asyncio
+async def test_ollama_stream_disables_thinking_by_default(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    fake_response = _FakeStreamResponse([_json_line("answer"), b"data: [DONE]\n"])
+    fake_session = _FakeSession(fake_response)
+    monkeypatch.setattr(
+        local_provider.aiohttp,
+        "ClientSession",
+        lambda *args, **kwargs: fake_session,
+    )
+
+    visible = [
+        chunk
+        async for chunk in local_provider.stream(
+            prompt="hello",
+            model="qwen3:4b",
+            base_url="http://localhost:11434/v1",
+        )
+    ]
+
+    assert "".join(visible) == "answer"
+    assert fake_session.posts[0]["json"]["think"] is False
+
+
+@pytest.mark.asyncio
+async def test_non_ollama_stream_does_not_send_thinking_parameter(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    fake_response = _FakeStreamResponse([_json_line("answer"), b"data: [DONE]\n"])
+    fake_session = _FakeSession(fake_response)
+    monkeypatch.setattr(
+        local_provider.aiohttp,
+        "ClientSession",
+        lambda *args, **kwargs: fake_session,
+    )
+
+    visible = [
+        chunk
+        async for chunk in local_provider.stream(
+            prompt="hello",
+            model="local-test",
+            base_url="http://localhost:8000/v1",
+        )
+    ]
+
+    assert "".join(visible) == "answer"
+    assert "think" not in fake_session.posts[0]["json"]
+
+
+@pytest.mark.asyncio
+async def test_ollama_stream_can_opt_back_into_thinking(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    fake_response = _FakeStreamResponse([_json_line("answer"), b"data: [DONE]\n"])
+    fake_session = _FakeSession(fake_response)
+    monkeypatch.setattr(
+        local_provider.aiohttp,
+        "ClientSession",
+        lambda *args, **kwargs: fake_session,
+    )
+
+    visible = [
+        chunk
+        async for chunk in local_provider.stream(
+            prompt="hello",
+            model="qwen3:8b",
+            base_url="http://localhost:11434/v1",
+            think=True,
+        )
+    ]
+
+    assert "".join(visible) == "answer"
+    assert fake_session.posts[0]["json"]["think"] is True
 
 
 def test_ollama_model_discovery_skips_embedding_only_tags() -> None:

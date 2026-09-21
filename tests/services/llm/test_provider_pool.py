@@ -82,7 +82,7 @@ async def test_runtime_provider_pool_is_bounded_and_closes_evictions(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_reset_closes_all_cached_providers(monkeypatch) -> None:
+async def test_reset_retires_cached_providers_without_immediate_close(monkeypatch) -> None:
     built: list[_FakeProvider] = []
 
     def _build(_config: LLMConfig) -> _FakeProvider:
@@ -93,7 +93,29 @@ async def test_reset_closes_all_cached_providers(monkeypatch) -> None:
     monkeypatch.setattr(provider_factory, "_build_runtime_provider", _build)
     provider_factory.get_runtime_provider(_config())
 
-    provider_factory.reset_runtime_provider_pool()
+    provider_factory.reset_runtime_provider_pool(grace_seconds=0.01)
+    import asyncio
+
+    await asyncio.sleep(0)
+    assert provider_factory.runtime_provider_pool_size() == 0
+    assert built[0].closed == 0
+    await asyncio.sleep(0.02)
+    assert built[0].closed == 1
+
+
+@pytest.mark.asyncio
+async def test_reset_can_close_cached_providers_immediately(monkeypatch) -> None:
+    built: list[_FakeProvider] = []
+
+    def _build(_config: LLMConfig) -> _FakeProvider:
+        provider = _FakeProvider()
+        built.append(provider)
+        return provider
+
+    monkeypatch.setattr(provider_factory, "_build_runtime_provider", _build)
+    provider_factory.get_runtime_provider(_config())
+
+    provider_factory.reset_runtime_provider_pool(grace_seconds=0)
     import asyncio
 
     await asyncio.sleep(0)

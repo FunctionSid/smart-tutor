@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 import time
 from typing import Any, List, Optional
@@ -17,6 +18,8 @@ from smarttutor.learning.models import ErrorType, LearningProgress, QuizAttempt
 from smarttutor.learning.service import LearningService
 from smarttutor.learning.storage import LearningStore
 from smarttutor.services.path_service import get_path_service
+
+logger = logging.getLogger(__name__)
 
 
 class ExamService:
@@ -157,7 +160,7 @@ class ExamService:
                 self.learning_service.record_quiz_attempt(progress, attempt)
                 learning_store.save(progress)
             except Exception as e:
-                pass
+                logger.warning("failed to record exam learning progress: %s", e)
 
         percentage = round((score / total) * 100.0, 1) if total > 0 else 0.0
         result = ExamResult(

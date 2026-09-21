@@ -549,6 +549,13 @@ function systemEventDisplay(
         detail: `${event.mode}`,
         tone: "muted",
       };
+    case "model_selected":
+      return {
+        icon: Bot,
+        title: t("Model selected"),
+        detail: [str("provider"), str("model")].filter(Boolean).join(" · "),
+        tone: "muted",
+      };
     case "trace_loaded": {
       const total = num("total") ?? num("total_l2_entries");
       const fresh = num("new") ?? num("new_l2_entries");
@@ -644,19 +651,21 @@ function systemEventDisplay(
           .join(" · "),
         tone: "warn",
       };
-    case "done":
+    case "done": {
+      const details = [
+        event.no_new_input ? t("No new input") : null,
+        event.no_doc ? t("No memory document") : null,
+        num("facts_added") ? `+${num("facts_added")} facts` : null,
+        num("edits_applied") ? `+${num("edits_applied")} edits` : null,
+        num("refs_dropped") ? `dropped=${num("refs_dropped")}` : null,
+      ].filter(Boolean);
       return {
         icon: CheckCircle2,
         title: t("Done"),
-        detail: [
-          num("facts_added") ? `+${num("facts_added")} facts` : null,
-          num("edits_applied") ? `+${num("edits_applied")} edits` : null,
-          num("refs_dropped") ? `dropped=${num("refs_dropped")}` : null,
-        ]
-          .filter(Boolean)
-          .join(" · "),
+        detail: details.length ? details.join(" · ") : t("No changes"),
         tone: "ok",
       };
+    }
     case "run_ended":
       return {
         icon: CheckCircle2,

@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import test from "node:test";
 
 import {
@@ -13,6 +15,7 @@ import {
 } from "../lib/hands-free-speech";
 import {
   DEFAULT_HANDS_FREE_SETTINGS,
+  HANDS_FREE_TOGGLE_EVENT,
   readHandsFreeSettings,
 } from "../lib/hands-free-settings";
 
@@ -76,6 +79,70 @@ test("Hands-Free announcements are coarse state messages", () => {
   assert.equal(handsFreeAnnouncement("WAKE_WAITING"), "Listening for Hey Jarvis.");
   assert.equal(handsFreeAnnouncement("CAPTURING"), "Listening.");
   assert.equal(handsFreeAnnouncement("SPEAKING"), "Speaking.");
+});
+
+test("hands-free exposes a global toggle event for keyboard shortcuts", () => {
+  assert.equal(HANDS_FREE_TOGGLE_EVENT, "smarttutor:hands-free-toggle");
+});
+
+test("chat composer wires Ctrl+H and Ctrl+R browser shortcuts", async () => {
+  const source = await readFile(
+    path.join(process.cwd(), "components/chat/home/ChatComposer.tsx"),
+    "utf8",
+  );
+
+  assert.match(source, /event\.ctrlKey/);
+  assert.match(source, /key === "h"[\s\S]*HANDS_FREE_TOGGLE_EVENT/);
+  assert.match(source, /key !== "r"[\s\S]*recorderState === "recording"[\s\S]*recorderStop\(\)/);
+  assert.match(source, /recorderStart\(\)/);
+  assert.match(source, /event\.preventDefault\(\)/);
+});
+
+test("hands-free control starts listening when saved enabled setting is true", async () => {
+  const source = await readFile(
+    path.join(process.cwd(), "components/chat/home/HandsFreeControl.tsx"),
+    "utf8",
+  );
+
+  assert.match(source, /const saved = readHandsFreeSettings\(\)/);
+  assert.match(source, /saved\.enabled[\s\S]*startWakeListening\(\)/);
+  assert.match(source, /HANDS_FREE_TOGGLE_EVENT/);
+});
+
+test("hands-free greets on the first wake before capturing speech", async () => {
+  const source = await readFile(
+    path.join(process.cwd(), "components/chat/home/HandsFreeControl.tsx"),
+    "utf8",
+  );
+
+  assert.match(source, /const greetedWakeRef = useRef\(false\)/);
+  assert.match(source, /new SpeechSynthesisUtterance\("Hi, I'm listening\."\)/);
+  assert.match(source, /await greetFirstWake\(\);[\s\S]*beginCapture\(\);/);
+});
+
+test("composer voice recorder reports empty transcripts visibly", async () => {
+  const recorderSource = await readFile(
+    path.join(process.cwd(), "hooks/useVoiceRecorder.ts"),
+    "utf8",
+  );
+  const composerSource = await readFile(
+    path.join(process.cwd(), "components/chat/home/ChatComposer.tsx"),
+    "utf8",
+  );
+
+  assert.match(recorderSource, /setError\("No speech detected\."\)/);
+  assert.match(recorderSource, /setAnnouncement\("No speech detected\."\)/);
+  assert.match(composerSource, /recorder\.error[\s\S]*Voice input error: \{\{message\}\}/);
+});
+
+test("hands-free buttons blur after activation so Space and Enter do not retrigger them", async () => {
+  const source = await readFile(
+    path.join(process.cwd(), "components/chat/home/HandsFreeControl.tsx"),
+    "utf8",
+  );
+
+  assert.match(source, /toggle\(\);[\s\S]*event\.currentTarget\.blur\(\)/);
+  assert.match(source, /stop\(\);[\s\S]*event\.currentTarget\.blur\(\)/);
 });
 
 test("stored settings cannot replace the locked wake word", () => {

@@ -20,6 +20,7 @@ from smarttutor.services.config.provider_runtime import (
     resolve_tts_runtime_config,
 )
 from smarttutor.services.voice import synthesize_speech, transcribe_audio
+from smarttutor.services.voice import wake
 from smarttutor.services.voice.adapters.global_tools import (
     GlobalEdgeTTSTTSAdapter,
     GlobalFasterWhisperSTTAdapter,
@@ -393,6 +394,25 @@ def test_resolve_stt_config_supports_global_faster_whisper() -> None:
     assert cfg.adapter == "global_faster_whisper"
     assert cfg.base_url == "C:/Python/python.exe"
     assert cfg.api_key == "sk-no-key-required"
+
+
+def test_wake_word_uses_configured_global_stt_python(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    python_exe = tmp_path / "python.exe"
+    python_exe.write_text("", encoding="utf-8")
+    monkeypatch.delenv("SMARTTUTOR_GLOBAL_PYTHON", raising=False)
+    monkeypatch.setattr(
+        "smarttutor.services.config.provider_runtime.resolve_stt_runtime_config",
+        lambda: STTConfig(
+            model="tiny",
+            base_url=str(python_exe),
+            adapter="global_faster_whisper",
+        ),
+    )
+
+    assert wake._global_python() == str(python_exe)
 
 
 def test_resolve_tts_config_raises_without_model() -> None:

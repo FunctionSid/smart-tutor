@@ -20,8 +20,13 @@ from .loader import (
 )
 from .model_catalog import (
     CATALOG_SECRET_MASK,
+    MODEL_DISCOVERY_CACHE_TTL_SECONDS,
     ModelCatalogService,
+    ModelDiscoveryResult,
+    clear_model_discovery_cache,
+    discover_models_with_cache,
     get_model_catalog_service,
+    model_discovery_cache_key,
     redact_catalog_secrets,
     restore_catalog_secrets,
 )
@@ -84,6 +89,11 @@ __all__ = [
     "ModelCatalogService",
     "get_model_catalog_service",
     "CATALOG_SECRET_MASK",
+    "MODEL_DISCOVERY_CACHE_TTL_SECONDS",
+    "ModelDiscoveryResult",
+    "clear_model_discovery_cache",
+    "discover_models_with_cache",
+    "model_discovery_cache_key",
     "redact_catalog_secrets",
     "restore_catalog_secrets",
     "ConfigTestRunner",

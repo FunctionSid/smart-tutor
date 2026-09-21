@@ -7,7 +7,7 @@
     "dev:turbo": "node ./scripts/dev.mjs --turbopack",
     "build": "node ./scripts/build.mjs",
     "start": "next start",
-    "lint": "eslint .",
+    "lint": "node ./scripts/lint.mjs",
     "test:node": "node ./scripts/run-node-tests.mjs",
     "perf:check": "node ./scripts/route_budgets.mjs",
     "build:perf": "npm run build && npm run perf:check",

@@ -44,6 +44,7 @@ export function sameLLMSelection(
 export async function listLLMOptions(options?: {
   force?: boolean;
   refreshLocal?: boolean;
+  forceRefresh?: boolean;
   timeoutMs?: number;
 }): Promise<LLMOptionsResponse> {
   return withClientCache<LLMOptionsResponse>(
@@ -55,9 +56,11 @@ export async function listLLMOptions(options?: {
         options?.timeoutMs ?? DEFAULT_LLM_OPTIONS_TIMEOUT_MS,
       );
       try {
-        const path = options?.refreshLocal
-          ? "/api/v1/settings/llm-options?refresh_local=true"
-          : "/api/v1/settings/llm-options";
+        const params = new URLSearchParams();
+        if (options?.refreshLocal) params.set("refresh_local", "true");
+        if (options?.forceRefresh) params.set("force_refresh", "true");
+        const query = params.toString();
+        const path = `/api/v1/settings/llm-options${query ? `?${query}` : ""}`;
         const response = await apiFetch(
           apiUrl(path),
           {

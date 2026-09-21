@@ -454,7 +454,7 @@ def read_chat_entities() -> list[Entity]:
     return out
 
 
-def read_quiz_entities() -> list[Entity]:
+def _read_notebook_quiz_entities() -> list[Entity]:
     """One Entity per recorded quiz attempt (notebook_entries row)."""
     db_path = get_path_service().get_chat_history_db()
     if not db_path.exists():
@@ -509,6 +509,175 @@ def read_quiz_entities() -> list[Entity]:
     except sqlite3.Error as exc:
         logger.warning("quiz snapshot scan failed: %s", exc)
         return []
+    return out
+
+
+def _read_learning_progress_entities() -> list[Entity]:
+    """One aggregate Entity per LearningStore path.
+
+    LearningStore remains authoritative. This is just a read-only L1 summary so
+    the existing quiz L2/L3 consolidators can notice repeated mistakes,
+    recovery, and mastery patterns without copying the learning database.
+    """
+    ps = get_path_service()
+    learning_root = ps.get_workspace_dir() / "learning"
+    if not learning_root.exists():
+        return []
+    if not (learning_root / "mastery.sqlite3").exists() and not any(learning_root.glob("*.json")):
+        return []
+
+    try:
+        from smarttutor.learning.storage import LearningStore
+
+        store = LearningStore(root=learning_root)
+        path_ids = store.list_all()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("learning snapshot scan failed: %s", exc)
+        return []
+
+    out: list[Entity] = []
+    for path_id in path_ids:
+        try:
+            progress = store.load(path_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("learning snapshot path scan failed path=%s: %s", path_id, exc)
+            continue
+        if progress is None:
+            continue
+
+        kp_names = {
+            kp.id: kp.name
+            for module in progress.modules
+            for kp in module.knowledge_points
+        }
+        kp_modules = {
+            kp.id: module.name or module.id
+            for module in progress.modules
+            for kp in module.knowledge_points
+        }
+        lines: list[str] = [
+            f"# Learning path: {progress.book_id}",
+            f"Stage: {progress.current_stage}",
+            f"Attempts: {len(progress.quiz_attempts)}",
+            f"Error records: {len(progress.error_records)}",
+        ]
+
+        kp_ids = sorted({a.knowledge_point_id for a in progress.quiz_attempts} | set(kp_names))
+        if kp_ids:
+            lines.append("## Knowledge point evidence")
+        for kp_id in kp_ids:
+            attempts = [a for a in progress.quiz_attempts if a.knowledge_point_id == kp_id]
+            correct = sum(1 for a in attempts if a.is_correct)
+            wrong = len(attempts) - correct
+            active_errors = sum(
+                1
+                for r in progress.error_records
+                if r.knowledge_point_id == kp_id and r.status in {"active", "retrying", "review"}
+            )
+            graduated_errors = sum(
+                1
+                for r in progress.error_records
+                if r.knowledge_point_id == kp_id and r.status == "graduated"
+            )
+            recent = "".join("C" if a.is_correct else "W" for a in attempts[-6:])
+            mastery = progress.mastery_levels.get(kp_id)
+            parts = [
+                f"- {kp_names.get(kp_id, kp_id)}",
+                f"module={kp_modules.get(kp_id, '')}",
+                f"attempts={len(attempts)}",
+                f"correct={correct}",
+                f"wrong={wrong}",
+                f"recent={recent or 'none'}",
+                f"active_errors={active_errors}",
+                f"graduated_errors={graduated_errors}",
+            ]
+            if mastery is not None:
+                parts.append(f"mastery={mastery:.2f}")
+            lines.append("; ".join(part for part in parts if part))
+
+        events = []
+        try:
+            events = store.list_events(path_id, after_revision=0)[-8:]
+        except Exception:
+            events = []
+        if events:
+            lines.append("## Recent learning events")
+            for event in events:
+                lines.append(
+                    f"- rev={event.revision}; type={event.event_type}; payload={event.payload}"
+                )
+
+        out.append(
+            Entity(
+                id=f"learning:{path_id}",
+                label=f"Learning progress · {path_id}",
+                ts=_iso(progress.updated_at),
+                content="\n".join(lines),
+                metadata={
+                    "source": "learning_store",
+                    "path_id": path_id,
+                    "attempt_count": len(progress.quiz_attempts),
+                    "error_record_count": len(progress.error_records),
+                },
+                fingerprint=_sha1(progress.model_dump(mode="json")),
+            )
+        )
+    return out
+
+
+def _read_exam_attempt_entities() -> list[Entity]:
+    """One Entity per submitted exam result."""
+    attempts_dir = get_path_service().get_workspace_dir() / "exams" / "attempts"
+    if not attempts_dir.exists():
+        return []
+    out: list[Entity] = []
+    for path in sorted(attempts_dir.glob("*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        attempt_id = str(data.get("attempt_id") or path.stem)
+        results = [r for r in data.get("results") or [] if isinstance(r, dict)]
+        missed = [r for r in results if not bool(r.get("is_correct"))]
+        weak_topics: dict[str, int] = {}
+        for r in missed:
+            topic = str(r.get("topic") or "unknown")
+            weak_topics[topic] = weak_topics.get(topic, 0) + 1
+        content = "\n".join(
+            [
+                f"# Exam attempt: {data.get('exam_id') or ''}",
+                f"Score: {data.get('score', 0)}/{data.get('total', 0)} ({data.get('percentage', 0)}%)",
+                f"Time spent seconds: {data.get('time_spent_seconds', 0)}",
+                f"Topic breakdown: {data.get('topic_breakdown') or {}}",
+                f"Missed topics: {weak_topics}",
+            ]
+        )
+        out.append(
+            Entity(
+                id=f"exam:{attempt_id}",
+                label=f"Exam attempt · {data.get('exam_id') or attempt_id}",
+                ts=_iso(data.get("submitted_at")),
+                content=content,
+                metadata={
+                    "source": "exam_attempt",
+                    "exam_id": data.get("exam_id"),
+                    "attempt_id": attempt_id,
+                    "score": data.get("score", 0),
+                    "total": data.get("total", 0),
+                    "percentage": data.get("percentage", 0),
+                },
+                fingerprint=_sha1(data),
+            )
+        )
+    return out
+
+
+def read_quiz_entities() -> list[Entity]:
+    """Quiz/question/practice learning evidence for the Memory quiz surface."""
+    out: list[Entity] = []
+    out.extend(_read_notebook_quiz_entities())
+    out.extend(_read_learning_progress_entities())
+    out.extend(_read_exam_attempt_entities())
     return out
 
 

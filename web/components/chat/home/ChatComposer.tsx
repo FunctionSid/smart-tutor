@@ -68,6 +68,7 @@ import ContextReferenceTree, {
 } from "./ContextReferenceTree";
 import { ComposerInput, type ComposerInputHandle } from "./ComposerInput";
 import { useVoiceRecorder } from "@/hooks/useVoiceRecorder";
+import { HANDS_FREE_TOGGLE_EVENT } from "@/lib/hands-free-settings";
 
 interface PendingAttachment {
   type: string;
@@ -398,6 +399,42 @@ export default memo(function ChatComposer({
     inputHandleRef.current?.setValue(next);
   }, []);
   const recorder = useVoiceRecorder(handleTranscript);
+  const recorderState = recorder.state;
+  const recorderStart = recorder.start;
+  const recorderStop = recorder.stop;
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if (key === "h") {
+        event.preventDefault();
+        window.dispatchEvent(new CustomEvent(HANDS_FREE_TOGGLE_EVENT));
+        return;
+      }
+      if (key !== "r") return;
+      event.preventDefault();
+      if (recorderState === "transcribing") return;
+      if (recorderState === "recording") {
+        recorderStop();
+        return;
+      }
+      if (isStreaming) {
+        onCancelStreaming();
+      }
+      void recorderStart();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    isStreaming,
+    onCancelStreaming,
+    recorderStart,
+    recorderState,
+    recorderStop,
+  ]);
 
   // Composer-row compaction: when the available width drops below ~620 px
   // (e.g. the Viewer panel is open or the user is on a narrow viewport),
@@ -861,6 +898,13 @@ export default memo(function ChatComposer({
           {attachmentError && (
             <div className="px-4 pb-2 text-[11px] text-red-600">
               {attachmentError}
+            </div>
+          )}
+          {recorder.error && (
+            <div className="px-4 pb-2 text-[11px] text-red-600">
+              {t("Voice input error: {{message}}", {
+                message: recorder.error,
+              })}
             </div>
           )}
 

@@ -2335,7 +2335,11 @@ export default function ChatPage() {
                 llmOptionsLoading={llmOptionsLoading}
                 llmOptionsError={llmOptionsError}
                 onRefreshLLMOptions={() =>
-                  void refreshLLMOptions({ force: true, refreshLocal: true })
+                  void refreshLLMOptions({
+                    force: true,
+                    refreshLocal: true,
+                    forceRefresh: true,
+                  })
                 }
                 contextBudget={contextBudget}
                 selectedBookReferences={selectedBookReferences}

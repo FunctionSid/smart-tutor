@@ -18,7 +18,6 @@ Dedup is invoked either:
 from __future__ import annotations
 
 from dataclasses import dataclass
-import logging
 
 from smarttutor.services.memory import paths
 from smarttutor.services.memory.consolidator.line_doc import (
@@ -28,6 +27,7 @@ from smarttutor.services.memory.consolidator.line_doc import (
 )
 from smarttutor.services.memory.consolidator.modes._runtime import (
     OnEvent,
+    activate_run_llm_selection,
     call_llm,
     emit,
     load_doc,
@@ -36,9 +36,6 @@ from smarttutor.services.memory.consolidator.modes._runtime import (
     write_doc_checkpoint,
 )
 from smarttutor.services.memory.settings import load_memory_settings
-
-logger = logging.getLogger(__name__)
-
 
 @dataclass
 class DedupResult:
@@ -60,7 +57,6 @@ async def run_dedup(
     on_event: OnEvent | None = None,
 ) -> DedupResult:
     from smarttutor.services.model_selection.runtime import (
-        activate_llm_selection,
         reset_llm_selection,
     )
 
@@ -68,15 +64,8 @@ async def run_dedup(
     iters = iterations if iterations is not None else settings.dedup.iterations
 
     token = None
-    if llm_selection:
-        try:
-            _config, token = activate_llm_selection(llm_selection)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "memory dedup: ignoring unresolvable llm_selection %s: %s", llm_selection, exc
-            )
-            token = None
     try:
+        token = await activate_run_llm_selection(llm_selection, on_event=on_event)
         return await _run_dedup_inner(
             layer, key, iters=iters, language=language, user_label=user_label, on_event=on_event
         )

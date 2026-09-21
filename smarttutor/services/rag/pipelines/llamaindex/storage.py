@@ -271,6 +271,26 @@ def clear_index_cache() -> None:
         _INDEX_CACHE.clear()
 
 
+def index_cache_diagnostics() -> dict[str, Any]:
+    """Return read-only cache state for operator diagnostics."""
+    now = time.monotonic()
+    with _INDEX_CACHE_LOCK:
+        _prune_index_cache_locked(now)
+        entries = [
+            {
+                "storage_dir": key[0],
+                "age_seconds": round(now - entry.last_used, 3),
+            }
+            for key, entry in _INDEX_CACHE.items()
+        ]
+    return {
+        "size": len(entries),
+        "max_size": _INDEX_CACHE_MAXSIZE,
+        "idle_seconds": _INDEX_CACHE_IDLE_SECONDS,
+        "entries": entries,
+    }
+
+
 def prune_index_cache() -> int:
     """Drop indexes idle past the single-user warm window."""
     with _INDEX_CACHE_LOCK:

@@ -102,6 +102,11 @@ PROVIDER_ALIASES = {
     "novita_ai": "novita",
     "orca_router": "orcarouter",
     "orca-router": "orcarouter",
+    "kutrim": "krutrim",
+    "kutrim_cloud": "krutrim",
+    "kutrim-cloud": "krutrim",
+    "krutrim_cloud": "krutrim",
+    "krutrim-cloud": "krutrim",
 }
 
 
@@ -332,6 +337,16 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         display_name="Gemini",
         backend="openai_compat",
         default_api_base="https://generativelanguage.googleapis.com/v1beta/openai/",
+    ),
+    ProviderSpec(
+        name="krutrim",
+        keywords=("krutrim", "kutrim"),
+        env_key="KRUTRIM_API_KEY",
+        display_name="Krutrim Cloud",
+        backend="openai_compat",
+        env_extras=(("KRUTRIM_CLOUD_API_KEY", "{api_key}"),),
+        detect_by_base_keyword="olakrutrim",
+        default_api_base="https://cloud.olakrutrim.com/v1",
     ),
     ProviderSpec(
         name="zhipu",

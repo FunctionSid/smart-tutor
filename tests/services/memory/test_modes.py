@@ -16,6 +16,7 @@ import pytest
 from smarttutor.services.memory import paths as paths_mod
 from smarttutor.services.memory.consolidator.modes import audit as audit_mod
 from smarttutor.services.memory.consolidator.modes import dedup as dedup_mod
+from smarttutor.services.memory.consolidator.modes import _runtime as runtime_mod
 from smarttutor.services.memory.consolidator.modes import update as update_mod
 from smarttutor.services.memory.document import Document, Entry, parse, serialize
 from smarttutor.services.memory.ids import new_entry_id
@@ -40,6 +41,171 @@ def _entity(eid: str, content: str = "user uses spaced repetition with FSRS sche
         metadata={},
         fingerprint="fp",
     )
+
+
+def _memory_settings_without_auto_cleanup():
+    from smarttutor.services.memory.settings import (
+        ChunkingSettings,
+        DedupSettings,
+        MemorySettings,
+        MergeSettings,
+        UpdateSettings,
+    )
+
+    return MemorySettings(
+        update=UpdateSettings(l2_budget=5000, l3_budget=5000),
+        dedup=DedupSettings(auto_after_update=False),
+        merge=MergeSettings(auto_after_update=False),
+        chunking=ChunkingSettings(min_chunk_chars=200, max_chunk_chars=5000, overlap_ratio=0.0),
+    )
+
+
+class _FakePathService:
+    def __init__(self, workspace):
+        self._workspace = workspace
+
+    def get_workspace_dir(self):
+        return self._workspace
+
+    def get_chat_history_db(self):
+        return self._workspace / "chat_history.sqlite3"
+
+
+# ── model selection ─────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_activate_run_llm_selection_emits_resolved_model(monkeypatch):
+    class Config:
+        model = "selected-model"
+        provider_name = "Selected Provider"
+        binding = "selected-binding"
+
+    token = object()
+    events = []
+
+    async def collect(event):
+        events.append(event)
+
+    def fake_activate(selection):
+        assert selection == {"profile_id": "profile-1", "model_id": "model-1"}
+        return Config(), token
+
+    monkeypatch.setattr(
+        "smarttutor.services.model_selection.runtime.activate_llm_selection",
+        fake_activate,
+    )
+
+    result = await runtime_mod.activate_run_llm_selection(
+        {"profile_id": "profile-1", "model_id": "model-1"},
+        on_event=collect,
+    )
+
+    assert result is token
+    assert events == [
+        {
+            "stage": "model_selected",
+            "profile_id": "profile-1",
+            "model_id": "model-1",
+            "model": "selected-model",
+            "provider": "Selected Provider",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_activate_run_llm_selection_rejects_invalid_selection(monkeypatch):
+    def fake_activate(selection):
+        raise ValueError("selected profile/model was not found")
+
+    monkeypatch.setattr(
+        "smarttutor.services.model_selection.runtime.activate_llm_selection",
+        fake_activate,
+    )
+
+    with pytest.raises(ValueError, match="Invalid LLM selection"):
+        await runtime_mod.activate_run_llm_selection(
+            {"profile_id": "missing", "model_id": "missing"},
+            on_event=lambda event: None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_update_l2_invalid_selection_fails_before_llm(memory_dir, monkeypatch):
+    monkeypatch.setattr(
+        "smarttutor.services.memory.consolidator.modes.update.snap.read_snapshot",
+        lambda surface: [_entity("01ABC")],
+    )
+
+    llm_calls = []
+
+    async def fake_activate(*args, **kwargs):
+        raise ValueError("Invalid LLM selection: selected profile/model was not found")
+
+    async def fake_llm(*args, **kwargs):
+        llm_calls.append(1)
+        return '{"facts": []}'
+
+    with (
+        patch.object(update_mod, "activate_run_llm_selection", side_effect=fake_activate),
+        patch("smarttutor.services.memory.consolidator.modes.update.call_llm", side_effect=fake_llm),
+    ):
+        with pytest.raises(ValueError, match="Invalid LLM selection"):
+            await update_mod.run_update(
+                "L2",
+                "chat",
+                language="en",
+                llm_selection={"profile_id": "missing", "model_id": "missing"},
+            )
+
+    assert llm_calls == []
+
+
+@pytest.mark.asyncio
+async def test_update_l2_valid_selection_emits_model_event(memory_dir, monkeypatch):
+    monkeypatch.setattr(
+        "smarttutor.services.memory.consolidator.modes.update.snap.read_snapshot",
+        lambda surface: [_entity("01ABC")],
+    )
+    events = []
+
+    async def collect(event):
+        events.append(event)
+
+    async def fake_activate(selection, *, on_event=None):
+        await on_event(
+            {
+                "stage": "model_selected",
+                "profile_id": selection["profile_id"],
+                "model_id": selection["model_id"],
+                "model": "selected-model",
+                "provider": "Selected Provider",
+            }
+        )
+        return None
+
+    async def fake_llm(*, system_prompt, user_prompt, **kwargs):
+        return '{"facts": [{"text": "uses FSRS scheduling", "section": "Mastery", "refs": ["chat:01ABC"]}]}'
+
+    with (
+        patch.object(update_mod, "activate_run_llm_selection", side_effect=fake_activate),
+        patch("smarttutor.services.memory.consolidator.modes.update.call_llm", side_effect=fake_llm),
+        patch.object(update_mod, "load_memory_settings") as mock_settings,
+    ):
+        from smarttutor.services.memory.settings import DedupSettings, MemorySettings
+
+        mock_settings.return_value = MemorySettings(dedup=DedupSettings(auto_after_update=False))
+        result = await update_mod.run_update(
+            "L2",
+            "chat",
+            language="en",
+            llm_selection={"profile_id": "profile-1", "model_id": "model-1"},
+            on_event=collect,
+        )
+
+    assert result.facts_added == 1
+    assert events[0]["stage"] == "model_selected"
+    assert events[0]["model"] == "selected-model"
 
 
 # ── update — L2 ─────────────────────────────────────────────────────────
@@ -84,6 +250,119 @@ async def test_update_l2_appends_facts_from_chunk(memory_dir, monkeypatch):
     md = (memory_dir / "L2" / "chat.md").read_text(encoding="utf-8")
     assert "## Mastery" in md
     assert "FSRS" in md or "scheduler" in md
+
+
+@pytest.mark.asyncio
+async def test_update_l3_builds_profile_from_l2_entries(memory_dir):
+    l2_doc = Document(
+        title="chat memory",
+        sections=[
+            (
+                "Mastery",
+                [
+                    Entry(
+                        id=new_entry_id(),
+                        section="Mastery",
+                        text="uses spaced repetition when studying optics",
+                        refs=["chat:01ABC"],
+                    )
+                ],
+            )
+        ],
+    )
+    (memory_dir / "L2" / "chat.md").write_text(serialize(l2_doc), encoding="utf-8")
+
+    async def fake_llm(*, system_prompt, user_prompt, **kwargs):
+        assert "chat" in user_prompt
+        return '{"facts": [{"text": "uses spaced repetition for optics practice", "section": "Learning style", "refs": ["chat"]}]}'
+
+    with (
+        patch("smarttutor.services.memory.consolidator.modes.update.call_llm", side_effect=fake_llm),
+        patch.object(update_mod, "load_memory_settings") as mock_settings,
+    ):
+        mock_settings.return_value = _memory_settings_without_auto_cleanup()
+        result = await update_mod.run_update("L3", "profile", language="en")
+
+    assert result.facts_added == 1
+    md = (memory_dir / "L3" / "profile.md").read_text(encoding="utf-8")
+    assert "## Learning style" in md
+    assert "spaced repetition" in md
+
+
+@pytest.mark.asyncio
+async def test_learning_store_evidence_flows_l1_to_l2_to_l3(memory_dir, monkeypatch):
+    from smarttutor.learning.models import (
+        ErrorType,
+        KnowledgePoint,
+        KnowledgeType,
+        LearningModule,
+        LearningProgress,
+        QuizAttempt,
+    )
+    from smarttutor.learning.service import LearningService
+    from smarttutor.learning.storage import LearningStore
+    from smarttutor.services.memory.snapshot import adapters
+
+    workspace = memory_dir / "workspace"
+    workspace.mkdir()
+    monkeypatch.setattr(adapters, "get_path_service", lambda: _FakePathService(workspace))
+
+    kp = KnowledgePoint(
+        id="kp_critical_angle",
+        name="Critical angle",
+        type=KnowledgeType.CONCEPT,
+        module_id="optics",
+    )
+    progress = LearningProgress(
+        book_id="exam_optics",
+        modules=[LearningModule(id="optics", name="Optics", order=0, knowledge_points=[kp])],
+        knowledge_types={kp.id: kp.type},
+    )
+    service = LearningService()
+    for question_id, is_correct in [
+        ("q_critical_angle", False),
+        ("q_critical_angle", False),
+        ("q_critical_angle", True),
+        ("q_critical_angle_followup", True),
+    ]:
+        service.record_quiz_attempt(
+            progress,
+            QuizAttempt(
+                question_id=question_id,
+                knowledge_point_id=kp.id,
+                module_id="optics",
+                is_correct=is_correct,
+                user_answer="B" if is_correct else "A",
+                error_type=None if is_correct else ErrorType.UNDERSTANDING_DEVIATION,
+            ),
+        )
+    progress.mastery_levels[kp.id] = service.calculate_mastery(progress, kp.id)
+    LearningStore(root=workspace / "learning").save(progress)
+
+    async def fake_llm(*, system_prompt, user_prompt, **kwargs):
+        if "# Source chunk" in user_prompt:
+            if "Critical angle" in user_prompt and "recent=WWCC" in user_prompt:
+                return '{"facts": [{"text": "showed repeated critical-angle mistakes followed by correct recovery attempts", "section": "Error patterns", "refs": ["quiz:learning:exam_optics"]}]}'
+            return '{"facts": []}'
+        if "# L2 chunk" in user_prompt:
+            return '{"facts": [{"text": "quiz entries show the user is practicing critical-angle reasoning after earlier mistakes", "section": "Practicing", "refs": ["quiz"]}]}'
+        return '{"facts": []}'
+
+    with (
+        patch("smarttutor.services.memory.consolidator.modes.update.call_llm", side_effect=fake_llm),
+        patch.object(update_mod, "load_memory_settings") as mock_settings,
+    ):
+        mock_settings.return_value = _memory_settings_without_auto_cleanup()
+        l2 = await update_mod.run_update("L2", "quiz", language="en")
+        l3 = await update_mod.run_update("L3", "scope", language="en")
+
+    assert l2.facts_added == 1
+    assert l3.facts_added == 1
+    l2_md = (memory_dir / "L2" / "quiz.md").read_text(encoding="utf-8")
+    l3_md = (memory_dir / "L3" / "scope.md").read_text(encoding="utf-8")
+    assert "critical-angle mistakes" in l2_md
+    assert "critical-angle reasoning" in l3_md
+    assert "q_critical_angle_followup" not in l3_md
 
 
 @pytest.mark.asyncio

@@ -340,6 +340,9 @@ export default function MemoryWorkbench({
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 px-6 py-4 md:px-10">
+      <h1 className="sr-only">
+        {layer === "L2" ? t("L2 Memory") : t("L3 Memory")}
+      </h1>
       <div className="flex items-center justify-between gap-3">
         <Breadcrumb layer={layer} label={nicelabel} t={t} />
         <LayerSwitcher current={layer} t={t} />

@@ -12,8 +12,11 @@ Resolution order, first valid wins:
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any, Optional, Sequence
+
+logger = logging.getLogger(__name__)
 
 
 def resolve_kb_mode(
@@ -35,7 +38,7 @@ def resolve_kb_mode(
                 candidates.append(entry.get("search_mode"))
             candidates.append(data.get("defaults", {}).get("provider_modes", {}).get(provider))
     except Exception:  # pragma: no cover - defensive
-        pass
+        logger.debug("Failed to read RAG mode config from %s", cfg_path, exc_info=True)
 
     supported_set = {m.lower() for m in supported}
     for candidate in candidates:

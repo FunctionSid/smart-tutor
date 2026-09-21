@@ -26,6 +26,7 @@ const PROVIDER_ICONS: Record<string, { file: string; mono?: boolean }> = {
   deepseek: { file: "deepseek-color.svg" },
   gemini: { file: "gemini-color.svg" },
   google: { file: "gemini-color.svg" },
+  krutrim: { file: "openai.svg", mono: true },
   zhipu: { file: "zhipu-color.svg" },
   dashscope: { file: "qwen-color.svg" },
   aliyun: { file: "qwen-color.svg" },

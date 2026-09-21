@@ -29,6 +29,7 @@ from smarttutor.services.codex_auth import (
 )
 from smarttutor.services.config import (
     CATALOG_SECRET_MASK,
+    discover_models_with_cache,
     get_config_test_runner,
     get_model_catalog_service,
     get_runtime_settings_service,
@@ -107,6 +108,12 @@ DEFAULT_UI_SETTINGS = {
     # generation) don't trip it; user-adjustable in Settings > Network.
     "chat_response_timeout": 180,
 }
+
+KRUTRIM_FALLBACK_MODELS = [
+    "Meta-Llama-3-8B-Instruct",
+    "Mistral-7B-Instruct",
+    "Krutrim-spectre-v2",
+]
 
 # Bounds for the chat idle timeout (seconds): long enough for video renders,
 # capped so a typo can't wedge a turn open forever.
@@ -195,6 +202,7 @@ class FetchModelsPayload(BaseModel):
     base_url: str = ""
     api_key: Optional[str] = None
     profile_id: Optional[str] = None
+    force_refresh: bool = False
 
 
 class NetworkSettingsUpdate(BaseModel):
@@ -338,22 +346,46 @@ def _ollama_profile_base_url(profile: dict[str, Any]) -> str:
     )
 
 
-def _catalog_model_entry(model_name: str, existing: dict[str, Any] | None, index: int) -> dict[str, Any]:
+def _catalog_model_entry(
+    model_name: str,
+    existing: dict[str, Any] | None,
+    index: int,
+    *,
+    provider: str = "ollama",
+) -> dict[str, Any]:
     if existing:
         merged = dict(existing)
         merged["name"] = str(existing.get("name") or model_name)
         merged["model"] = model_name
         return merged
     return {
-        "id": f"llm-ollama-model-{int(time.time() * 1000)}-{index}",
+        "id": f"llm-{provider}-model-{int(time.time() * 1000)}-{index}",
         "name": model_name,
         "model": model_name,
     }
 
 
-async def _refresh_ollama_llm_profiles(catalog: dict[str, Any]) -> dict[str, Any]:
-    """Discover installed Ollama chat models and merge them into LLM profiles."""
+def _krutrim_env_api_key() -> str:
+    import os
+
+    return (
+        str(os.environ.get("KRUTRIM_API_KEY") or "").strip()
+        or str(os.environ.get("KRUTRIM_CLOUD_API_KEY") or "").strip()
+    )
+
+
+async def _fetch_llm_models(provider: str, base_url: str, api_key: str | None) -> list[str]:
     from smarttutor.services.llm.factory import fetch_models as fetch_llm_models
+
+    return await fetch_llm_models(provider, base_url, api_key)
+
+
+async def _refresh_ollama_llm_profiles(
+    catalog: dict[str, Any],
+    *,
+    force_refresh: bool = False,
+) -> dict[str, Any]:
+    """Discover installed Ollama chat models and merge them into LLM profiles."""
     from smarttutor.services.provider_registry import canonical_provider_name, find_by_name
 
     services = catalog.setdefault("services", {})
@@ -392,16 +424,22 @@ async def _refresh_ollama_llm_profiles(catalog: dict[str, Any]) -> dict[str, Any
 
         profile_id = str(profile.get("id") or "")
         base_url = _ollama_profile_base_url(profile)
-        try:
-            model_names = await fetch_llm_models("ollama", base_url, None)
-        except Exception as exc:  # noqa: BLE001 - return status for UI
-            logger.info("Ollama model discovery failed for %s: %s", base_url, exc)
+        result = await discover_models_with_cache(
+            "ollama",
+            base_url,
+            None,
+            _fetch_llm_models,
+            force_refresh=force_refresh,
+        )
+        model_names = result.models
+        if result.error and not model_names:
+            logger.info("Ollama model discovery failed for %s: %s", base_url, result.error)
             statuses.append(
                 {
                     "profile_id": profile_id,
                     "provider": "ollama",
                     "ok": False,
-                    "message": f"Ollama unavailable at {base_url}: {exc}",
+                    "message": f"Ollama unavailable at {base_url}: {result.error}",
                 }
             )
             continue
@@ -442,10 +480,133 @@ async def _refresh_ollama_llm_profiles(catalog: dict[str, Any]) -> dict[str, Any
                 "profile_id": profile_id,
                 "provider": "ollama",
                 "ok": True,
-                "message": f"Discovered {len(model_names)} Ollama model(s).",
+                "message": (
+                    f"Using cached {len(model_names)} Ollama model(s)."
+                    if result.from_cache
+                    else f"Discovered {len(model_names)} Ollama model(s)."
+                ),
                 "count": len(model_names),
             }
         )
+
+    return {"catalog": catalog, "statuses": statuses, "changed": changed}
+
+
+async def _refresh_krutrim_llm_profiles(
+    catalog: dict[str, Any],
+    *,
+    force_refresh: bool = False,
+) -> dict[str, Any]:
+    """Discover Krutrim Cloud chat models and merge them into LLM profiles."""
+    from smarttutor.services.provider_registry import canonical_provider_name, find_by_name
+
+    services = catalog.setdefault("services", {})
+    llm_service = services.setdefault("llm", {})
+    profiles = llm_service.get("profiles", [])
+    if not isinstance(profiles, list):
+        profiles = []
+        llm_service["profiles"] = profiles
+    statuses: list[dict[str, Any]] = []
+    changed = False
+
+    api_key = _krutrim_env_api_key()
+    spec = find_by_name("krutrim")
+    default_base = spec.default_api_base if spec else "https://cloud.olakrutrim.com/v1"
+    has_krutrim_profile = any(
+        isinstance(profile, dict)
+        and canonical_provider_name(str(profile.get("binding") or "")) == "krutrim"
+        for profile in profiles
+    )
+    if not has_krutrim_profile and not api_key:
+        return {"catalog": catalog, "statuses": statuses, "changed": changed}
+    if not has_krutrim_profile:
+        profiles.append(
+            {
+                "id": "llm-profile-krutrim-cloud",
+                "name": "Krutrim Cloud",
+                "binding": "krutrim",
+                "base_url": default_base,
+                # Blank by design: runtime falls back to KRUTRIM_API_KEY /
+                # KRUTRIM_CLOUD_API_KEY from the process environment.
+                "api_key": "",
+                "api_version": "",
+                "extra_headers": {},
+                "models": [],
+            }
+        )
+
+    for profile in profiles:
+        if not isinstance(profile, dict):
+            continue
+        if canonical_provider_name(str(profile.get("binding") or "")) != "krutrim":
+            continue
+
+        profile_id = str(profile.get("id") or "")
+        base_url = (str(profile.get("base_url") or "").strip() or default_base).rstrip("/")
+        profile_key = str(profile.get("api_key") or "").strip()
+        request_key = profile_key or api_key or None
+        result = await discover_models_with_cache(
+            "krutrim",
+            base_url,
+            request_key,
+            _fetch_llm_models,
+            force_refresh=force_refresh,
+        )
+        if result.error:
+            logger.info("Krutrim model discovery failed for %s: %s", base_url, result.error)
+        model_names = result.models
+        if not model_names:
+            model_names = KRUTRIM_FALLBACK_MODELS
+            statuses.append(
+                {
+                    "profile_id": profile_id,
+                    "provider": "krutrim",
+                    "ok": bool(request_key),
+                    "message": (
+                        "Using documented Krutrim fallback models; live discovery returned none."
+                    ),
+                    "count": len(model_names),
+                }
+            )
+        else:
+            statuses.append(
+                {
+                    "profile_id": profile_id,
+                    "provider": "krutrim",
+                    "ok": True,
+                    "message": (
+                        f"Using cached {len(model_names)} Krutrim model(s)."
+                        if result.from_cache
+                        else f"Discovered {len(model_names)} Krutrim model(s)."
+                    ),
+                    "count": len(model_names),
+                }
+            )
+
+        existing_by_model = {
+            str(model.get("model") or ""): model
+            for model in profile.get("models", [])
+            if isinstance(model, dict)
+        }
+        next_models = [
+            _catalog_model_entry(
+                model_name,
+                existing_by_model.get(model_name),
+                index,
+                provider="krutrim",
+            )
+            for index, model_name in enumerate(model_names)
+        ]
+        if profile.get("models") != next_models:
+            profile["models"] = next_models
+            changed = True
+
+        valid_model_ids = {str(model.get("id") or "") for model in next_models}
+        if profile_id == llm_service.get("active_profile_id") and (
+            llm_service.get("active_model_id") not in valid_model_ids
+        ):
+            llm_service["active_model_id"] = next_models[0]["id"]
+            changed = True
 
     return {"catalog": catalog, "statuses": statuses, "changed": changed}
 
@@ -1377,16 +1538,23 @@ async def test_mineru_connection(payload: MinerUSettingsUpdate):
 
 
 @router.get("/llm-options")
-async def get_llm_options(refresh_local: bool = False):
+async def get_llm_options(refresh_local: bool = False, force_refresh: bool = False):
     if not get_current_user().is_admin:
         return allowed_llm_options()
     service = get_model_catalog_service()
     catalog = service.load()
     local_statuses: list[dict[str, Any]] = []
     if refresh_local:
-        refreshed = await _refresh_ollama_llm_profiles(catalog)
+        refreshed = await _refresh_ollama_llm_profiles(catalog, force_refresh=force_refresh)
+        changed = bool(refreshed["changed"])
         local_statuses = refreshed["statuses"]
-        if refreshed["changed"]:
+        refreshed = await _refresh_krutrim_llm_profiles(
+            refreshed["catalog"],
+            force_refresh=force_refresh,
+        )
+        changed = changed or bool(refreshed["changed"])
+        local_statuses.extend(refreshed["statuses"])
+        if changed:
             catalog = service.save(refreshed["catalog"])
             _invalidate_runtime_caches()
     payload = list_llm_options(catalog)
@@ -1438,8 +1606,6 @@ async def fetch_models_from_provider(payload: FetchModelsPayload):
     the user type model IDs by hand.
     """
     _require_settings_admin()
-    from smarttutor.services.llm.factory import fetch_models as fetch_llm_models
-
     binding = (payload.binding or "").strip().lower() or "openai"
     base_url = (payload.base_url or "").strip()
     if not base_url:
@@ -1469,6 +1635,21 @@ async def fetch_models_from_provider(payload: FetchModelsPayload):
     from smarttutor.services.provider_registry import find_by_name
 
     spec = find_by_name(binding)
+    if not api_key and spec and spec.env_key:
+        import os
+
+        api_key = (
+            str(os.environ.get(spec.env_key) or "").strip()
+            or next(
+                (
+                    str(os.environ.get(name) or "").strip()
+                    for name, _ in spec.env_extras
+                    if str(os.environ.get(name) or "").strip()
+                ),
+                "",
+            )
+            or None
+        )
     if spec and spec.is_local and str(api_key or "").strip().lower() in {
         "",
         "local",
@@ -1478,16 +1659,21 @@ async def fetch_models_from_provider(payload: FetchModelsPayload):
     }:
         api_key = None
 
-    try:
-        model_ids = await fetch_llm_models(binding, base_url, api_key)
-    except Exception as exc:  # noqa: BLE001 — surface any provider error as 502
-        logger.exception("Failed to fetch models from %s", base_url)
+    result = await discover_models_with_cache(
+        binding,
+        base_url,
+        api_key,
+        _fetch_llm_models,
+        force_refresh=payload.force_refresh,
+    )
+    if result.error and not result.models:
+        logger.info("Failed to fetch models from %s: %s", base_url, result.error)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Provider request failed: {exc}",
-        ) from exc
+            detail=f"Provider request failed: {result.error}",
+        )
 
-    return {"models": [{"id": model_id, "name": model_id} for model_id in model_ids]}
+    return {"models": [{"id": model_id, "name": model_id} for model_id in result.models]}
 
 
 @router.put("/theme")

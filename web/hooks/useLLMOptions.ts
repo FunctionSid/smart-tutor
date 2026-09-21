@@ -12,6 +12,7 @@ import { createSingleFlight } from "@/lib/single-flight";
 interface RefreshOptions {
   force?: boolean;
   refreshLocal?: boolean;
+  forceRefresh?: boolean;
   /** Keep the last usable catalog visible while synchronizing in the background. */
   background?: boolean;
 }
@@ -48,6 +49,7 @@ export function useLLMOptions() {
         const payload = await loadOptions({
           force: options?.force,
           refreshLocal: options?.refreshLocal,
+          forceRefresh: options?.forceRefresh,
         });
         if (!mountedRef.current || requestId !== latestRequestRef.current)
           return;
@@ -62,7 +64,8 @@ export function useLLMOptions() {
   );
 
   useEffect(() => {
-    void refresh({ refreshLocal: true });
+    void refresh();
+    void refresh({ force: true, refreshLocal: true, background: true });
   }, [refresh]);
 
   return {

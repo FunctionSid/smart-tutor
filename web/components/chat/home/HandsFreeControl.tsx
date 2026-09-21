@@ -8,6 +8,7 @@ import { apiFetch, apiUrl } from "@/lib/api";
 import {
   DEFAULT_HANDS_FREE_SETTINGS,
   HANDS_FREE_RUNTIME_EVENT,
+  HANDS_FREE_TOGGLE_EVENT,
   readHandsFreeSettings,
   writeHandsFreeSettings,
   type HandsFreeSettings,
@@ -89,6 +90,8 @@ export default function HandsFreeControl({
   const lastVoiceAtRef = useRef<number>(0);
   const lastWakeAtRef = useRef<number>(0);
   const captureTimerRef = useRef<number>(0);
+  const hydratedSettingsRef = useRef(false);
+  const greetedWakeRef = useRef(false);
 
   const enabled = state !== "OFF";
   const announcement = error || handsFreeAnnouncement(state);
@@ -174,6 +177,35 @@ export default function HandsFreeControl({
     transition({ type: "CAPTURE_STARTED" });
   }, [finishCapture, onSend, settings.maxCaptureMs, transcribe, transition]);
 
+  const greetFirstWake = useCallback(async () => {
+    if (greetedWakeRef.current || settings.fillerMode === "off") return;
+    greetedWakeRef.current = true;
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    await new Promise<void>((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        resolve();
+      };
+      const utterance = new SpeechSynthesisUtterance("Hi, I'm listening.");
+      utterance.volume = Math.max(0, Math.min(1, settings.volume / 100));
+      utterance.rate = Math.max(0.1, Math.min(2, 1 + settings.speechRate / 100));
+      utterance.onend = finish;
+      utterance.onerror = finish;
+      window.setTimeout(finish, 1500);
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utterance);
+    });
+  }, [settings.fillerMode, settings.speechRate, settings.volume]);
+
+  const beginCaptureAfterWake = useCallback(() => {
+    void (async () => {
+      await greetFirstWake();
+      beginCapture();
+    })();
+  }, [beginCapture, greetFirstWake]);
+
   const scoreWake = useCallback(
     async (pcm: Int16Array) => {
       if (wakeBusyRef.current) return;
@@ -201,7 +233,7 @@ export default function HandsFreeControl({
           }),
         );
         if (isStreaming) onCancelStreaming();
-        beginCapture();
+        beginCaptureAfterWake();
       } catch (exc) {
         setError(exc instanceof Error ? exc.message : "Hey Jarvis detection failed.");
         transition({ type: "ERROR" });
@@ -209,7 +241,7 @@ export default function HandsFreeControl({
         wakeBusyRef.current = false;
       }
     },
-    [beginCapture, isStreaming, onCancelStreaming, settings.wakeThreshold, transition],
+    [beginCaptureAfterWake, isStreaming, onCancelStreaming, settings.wakeThreshold, transition],
   );
 
   const startWakeListening = useCallback(async () => {
@@ -301,14 +333,15 @@ export default function HandsFreeControl({
 
   const toggle = useCallback(() => {
     if (enabled) {
+      greetedWakeRef.current = false;
       stop();
       setSettings((current) => {
-      const next = { ...current, enabled: false };
-      writeHandsFreeSettings(next);
-      window.dispatchEvent(
-        new CustomEvent(HANDS_FREE_RUNTIME_EVENT, { detail: { enabled: false } }),
-      );
-      return next;
+        const next = { ...current, enabled: false };
+        writeHandsFreeSettings(next);
+        window.dispatchEvent(
+          new CustomEvent(HANDS_FREE_RUNTIME_EVENT, { detail: { enabled: false } }),
+        );
+        return next;
       });
       return;
     }
@@ -320,13 +353,27 @@ export default function HandsFreeControl({
       );
       return next;
     });
+    greetedWakeRef.current = false;
     void startWakeListening();
   }, [enabled, startWakeListening, stop]);
 
   useEffect(() => {
-    setSettings(readHandsFreeSettings());
-    return cleanupAudio;
-  }, [cleanupAudio]);
+    if (hydratedSettingsRef.current) return;
+    hydratedSettingsRef.current = true;
+    const saved = readHandsFreeSettings();
+    setSettings(saved);
+    if (saved.enabled && !document.hidden && document.hasFocus()) {
+      void startWakeListening();
+    }
+  }, [startWakeListening]);
+
+  useEffect(() => cleanupAudio, [cleanupAudio]);
+
+  useEffect(() => {
+    const handler = () => toggle();
+    window.addEventListener(HANDS_FREE_TOGGLE_EVENT, handler);
+    return () => window.removeEventListener(HANDS_FREE_TOGGLE_EVENT, handler);
+  }, [toggle]);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -381,7 +428,10 @@ export default function HandsFreeControl({
     <div className="flex min-w-0 items-center gap-1.5">
       <button
         type="button"
-        onClick={toggle}
+        onClick={(event) => {
+          toggle();
+          event.currentTarget.blur();
+        }}
         className={`group inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] px-2.5 text-[12px] font-medium transition-[background-color,color,transform] duration-150 active:scale-95 ${
           enabled
             ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
@@ -401,7 +451,10 @@ export default function HandsFreeControl({
       {enabled && (
         <button
           type="button"
-          onClick={stop}
+          onClick={(event) => {
+            stop();
+            event.currentTarget.blur();
+          }}
           className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] text-[var(--muted-foreground)] transition hover:bg-[var(--muted)]/55 hover:text-[var(--foreground)]"
           aria-label={t("Stop Hands-Free")}
           title={t("Stop Hands-Free")}

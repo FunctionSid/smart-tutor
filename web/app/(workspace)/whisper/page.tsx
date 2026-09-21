@@ -285,10 +285,10 @@ export default function WhisperPage() {
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
         <div className="min-w-0">
-          <div className="flex items-center gap-2 text-sm font-medium text-[var(--foreground)]">
+          <h1 className="flex items-center gap-2 text-sm font-medium text-[var(--foreground)]">
             <Ear className="h-4 w-4 text-[var(--primary)]" aria-hidden />
             {t("Whisper")}
-          </div>
+          </h1>
           <p className="mt-0.5 text-[11px] text-[var(--muted-foreground)]">
             {t("Dual-seat supervision · seat switch (not split-screen)")}
             {dtSessionId ? (

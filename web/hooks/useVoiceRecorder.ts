@@ -86,8 +86,13 @@ export function useVoiceRecorder(onTranscript: (text: string) => void) {
         }
         const data = (await resp.json()) as { text?: string };
         const text = (data.text || "").trim();
-        if (text) onTranscriptRef.current(text);
-        setAnnouncement("Transcription complete.");
+        if (text) {
+          onTranscriptRef.current(text);
+          setAnnouncement("Transcription complete.");
+        } else {
+          setError("No speech detected.");
+          setAnnouncement("No speech detected.");
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Transcription failed.");
         setAnnouncement("Transcription failed.");

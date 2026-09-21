@@ -21,6 +21,12 @@ class _FakePathService:
     def __init__(self, root: Path) -> None:
         self.workspace_root = root
 
+    def get_workspace_dir(self) -> Path:
+        return self.workspace_root
+
+    def get_chat_history_db(self) -> Path:
+        return self.workspace_root / "chat_history.sqlite3"
+
 
 def _write_session(sessions_dir: Path, key: str, turns: list[tuple[str, str]]) -> None:
     from smarttutor.partners.helpers import safe_filename
@@ -173,3 +179,94 @@ def test_fingerprint_changes_when_conversation_grows(partner_tree: Path) -> None
     )
     fp2 = adapters.read_partner_entities()[0].fingerprint
     assert fp1 != fp2
+
+
+def test_quiz_entities_include_learning_store_summary(tmp_path: Path, monkeypatch) -> None:
+    from smarttutor.learning.models import (
+        ErrorType,
+        KnowledgePoint,
+        KnowledgeType,
+        LearningModule,
+        LearningProgress,
+        QuizAttempt,
+    )
+    from smarttutor.learning.service import LearningService
+    from smarttutor.learning.storage import LearningStore
+
+    monkeypatch.setattr(adapters, "get_path_service", lambda: _FakePathService(tmp_path))
+
+    kp = KnowledgePoint(
+        id="kp_critical_angle",
+        name="Critical angle",
+        type=KnowledgeType.CONCEPT,
+        module_id="optics",
+    )
+    progress = LearningProgress(
+        book_id="exam_optics",
+        modules=[LearningModule(id="optics", name="Optics", order=0, knowledge_points=[kp])],
+        knowledge_types={kp.id: kp.type},
+    )
+    service = LearningService()
+    for question_id, is_correct in [
+        ("q_critical_angle", False),
+        ("q_critical_angle", False),
+        ("q_critical_angle", True),
+        ("q_critical_angle_followup", True),
+    ]:
+        service.record_quiz_attempt(
+            progress,
+            QuizAttempt(
+                question_id=question_id,
+                knowledge_point_id=kp.id,
+                module_id="optics",
+                is_correct=is_correct,
+                user_answer="B" if is_correct else "A",
+                error_type=None if is_correct else ErrorType.UNDERSTANDING_DEVIATION,
+            ),
+        )
+    progress.mastery_levels[kp.id] = service.calculate_mastery(progress, kp.id)
+    LearningStore(root=tmp_path / "learning").save(progress)
+
+    entities = adapters.read_quiz_entities()
+
+    entity = next(e for e in entities if e.id == "learning:exam_optics")
+    assert entity.metadata["source"] == "learning_store"
+    assert "Critical angle" in entity.content
+    assert "attempts=4" in entity.content
+    assert "wrong=2" in entity.content
+    assert "recent=WWCC" in entity.content
+    assert "mastery=" in entity.content
+
+
+def test_quiz_entities_include_exam_attempt_summary(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(adapters, "get_path_service", lambda: _FakePathService(tmp_path))
+    attempts_dir = tmp_path / "exams" / "attempts"
+    attempts_dir.mkdir(parents=True)
+    (attempts_dir / "attempt_1.json").write_text(
+        json.dumps(
+            {
+                "attempt_id": "attempt_1",
+                "exam_id": "exam_optics",
+                "score": 1,
+                "total": 2,
+                "percentage": 50.0,
+                "time_spent_seconds": 90,
+                "submitted_at": 1780000000.0,
+                "topic_breakdown": {"Optics": {"correct": 1, "total": 2}},
+                "results": [
+                    {"topic": "Optics", "is_correct": False},
+                    {"topic": "Optics", "is_correct": True},
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    entities = adapters.read_quiz_entities()
+
+    entity = next(e for e in entities if e.id == "exam:attempt_1")
+    assert entity.metadata["source"] == "exam_attempt"
+    assert entity.metadata["percentage"] == 50.0
+    assert "Score: 1/2 (50.0%)" in entity.content
+    assert "Missed topics: {'Optics': 1}" in entity.content

@@ -6,6 +6,7 @@ import atexit
 from dataclasses import dataclass
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import shutil
@@ -19,6 +20,7 @@ from typing import Callable
 from urllib import error as urlerror
 from urllib import parse as urlparse
 from urllib import request as urlrequest
+import webbrowser
 
 from smarttutor.runtime.banner import labels_for, print_banner, resolve_language
 from smarttutor.runtime.home import (
@@ -28,6 +30,8 @@ from smarttutor.runtime.home import (
     validate_runtime_home,
 )
 from smarttutor.runtime.memory_probe import SUPERVISOR_PID_ENV
+
+logger = logging.getLogger(__name__)
 
 BACKEND_READY_TIMEOUT = 60
 FRONTEND_READY_TIMEOUT = 120
@@ -100,19 +104,19 @@ def _reset_runtime_singletons() -> None:
 
         PathService.reset_instance()
     except Exception:
-        pass
+        logger.debug("Failed to reset PathService singleton", exc_info=True)
     try:
         from smarttutor.services.config.runtime_settings import RuntimeSettingsService
 
         RuntimeSettingsService._instances.clear()
     except Exception:
-        pass
+        logger.debug("Failed to reset RuntimeSettingsService singletons", exc_info=True)
     try:
         from smarttutor.services.config.model_catalog import ModelCatalogService
 
         ModelCatalogService._instances.clear()
     except Exception:
-        pass
+        logger.debug("Failed to reset ModelCatalogService singletons", exc_info=True)
 
 
 def _get_pgid(pid: int | None) -> int | None:
@@ -158,14 +162,24 @@ def _terminate(proc: ManagedProcess | None) -> None:
     try:
         _send_tree_signal(proc.process.pid, proc.pgid, signal.SIGTERM)
     except Exception:
-        pass
+        logger.debug(
+            "Failed to send SIGTERM to %s pid=%s",
+            proc.name,
+            proc.process.pid,
+            exc_info=True,
+        )
     try:
         proc.process.wait(timeout=8)
     except subprocess.TimeoutExpired:
         try:
             _send_tree_signal(proc.process.pid, proc.pgid, KILL_SIGNAL)
         except Exception:
-            pass
+            logger.debug(
+                "Failed to send kill signal to %s pid=%s",
+                proc.name,
+                proc.process.pid,
+                exc_info=True,
+            )
 
 
 def _relax_console_encoding(streams: tuple[object, ...] | None = None) -> None:
@@ -302,6 +316,37 @@ def _port_listeners_windows(port: int) -> list[tuple[int, str]]:
                 name = ""
         listeners.append((pid, name or "?"))
     return listeners
+
+
+def _windows_pid_listen_ports(pid: int) -> list[int]:
+    netstat = shutil.which("netstat")
+    if os.name != "nt" or not netstat:
+        return []
+    try:
+        completed = subprocess.run(
+            [netstat, "-ano", "-p", "tcp"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception:
+        return []
+    ports: list[int] = []
+    suffix = str(pid)
+    for line in completed.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 5 or parts[0].upper() != "TCP" or parts[3].upper() != "LISTENING":
+            continue
+        if parts[4] != suffix:
+            continue
+        try:
+            port = int(parts[1].rsplit(":", 1)[1])
+        except (IndexError, ValueError):
+            continue
+        if port not in ports:
+            ports.append(port)
+    return ports
 
 
 def _suggest_free_port(preferred: int, taken: set[int]) -> int:
@@ -846,12 +891,34 @@ def _detect_existing_source_frontend(frontend: FrontendRuntime) -> ExistingFront
             pid=pid,
             lock_path=lock_path,
         )
+    if os.name == "nt":
+        return _detect_existing_source_frontend_windows(frontend)
     return None
 
 
 def _process_command(pid: int | None) -> str:
-    if pid is None or os.name == "nt":
+    if pid is None:
         return ""
+    if os.name == "nt":
+        powershell = shutil.which("powershell") or shutil.which("pwsh")
+        if not powershell:
+            return ""
+        try:
+            completed = subprocess.run(
+                [
+                    powershell,
+                    "-NoProfile",
+                    "-Command",
+                    f"(Get-CimInstance Win32_Process -Filter \"ProcessId={pid}\").CommandLine",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+        except Exception:
+            return ""
+        return completed.stdout.strip()
     ps = shutil.which("ps")
     if not ps:
         return ""
@@ -874,6 +941,51 @@ def _looks_like_next_process(pid: int | None) -> bool:
         command
         and ("next-server" in command or "next/dist/bin/next" in command or " next dev" in command)
     )
+
+
+def _detect_existing_source_frontend_windows(
+    frontend: FrontendRuntime,
+) -> ExistingFrontendRuntime | None:
+    powershell = shutil.which("powershell") or shutil.which("pwsh")
+    if not powershell:
+        return None
+    source = str(frontend.cwd).lower()
+    try:
+        completed = subprocess.run(
+            [
+                powershell,
+                "-NoProfile",
+                "-Command",
+                "Get-CimInstance Win32_Process | "
+                "Where-Object { $_.CommandLine -like '*next*' } | "
+                "ForEach-Object { \"$($_.ProcessId)`t$($_.CommandLine)\" }",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception:
+        return None
+    for line in completed.stdout.splitlines():
+        pid_text, sep, command = line.partition("\t")
+        if not sep:
+            continue
+        command_lower = command.lower()
+        if source not in command_lower or "node_modules" not in command_lower:
+            continue
+        try:
+            pid = int(pid_text)
+        except ValueError:
+            continue
+        for port in _windows_pid_listen_ports(pid):
+            return ExistingFrontendRuntime(
+                url=f"http://localhost:{port}",
+                port=port,
+                pid=pid,
+                lock_path=frontend.cwd / ".next" / "dev" / "lock",
+            )
+    return None
 
 
 def _stop_unhealthy_source_frontend(frontend: ExistingFrontendRuntime) -> bool:
@@ -1148,6 +1260,11 @@ def start(home: str | Path | None = None, *, dev: bool = False) -> None:
                 should_stop=lambda: shutdown_requested,
             )
         _log(_t("start.open_in_browser", url=frontend_url))
+        if os.environ.get("SMARTTUTOR_OPEN_BROWSER") == "1":
+            try:
+                webbrowser.open(frontend_url)
+            except Exception:
+                pass
 
         while not shutdown_requested:
             for proc in processes:

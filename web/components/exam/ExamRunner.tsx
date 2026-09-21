@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useId } from "react";
+import React, { useCallback, useState, useEffect, useId } from "react";
 import { CheckCircle2, AlertCircle, Clock, ArrowLeft, ArrowRight, Send, ListChecks } from "lucide-react";
 import MarkdownRenderer from "@/components/common/MarkdownRenderer";
 
@@ -42,6 +42,10 @@ export default function ExamRunner({ exam, onSubmit, onExit }: ExamRunnerProps) 
   const total = exam.questions.length;
   const currentQ = exam.questions[currentIndex];
 
+  const handleSubmit = useCallback(() => {
+    onSubmit(answers, elapsedSeconds);
+  }, [answers, elapsedSeconds, onSubmit]);
+
   useEffect(() => {
     const timer = setInterval(() => {
       setElapsedSeconds((prev) => prev + 1);
@@ -60,15 +64,11 @@ export default function ExamRunner({ exam, onSubmit, onExit }: ExamRunnerProps) 
       }
     }, 1000);
     return () => clearInterval(timer);
-  }, [timeRemaining]);
+  }, [handleSubmit, timeRemaining]);
 
   const selectOption = (letter: string) => {
     if (!currentQ) return;
     setAnswers((prev) => ({ ...prev, [currentQ.id]: letter }));
-  };
-
-  const handleSubmit = () => {
-    onSubmit(answers, elapsedSeconds);
   };
 
   const answeredCount = Object.keys(answers).length;

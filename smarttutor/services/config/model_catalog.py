@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from copy import deepcopy
+from dataclasses import dataclass, field
+import hashlib
 import json
 import os
 from pathlib import Path
 import shutil
 import tempfile
 import threading
+import time
 from typing import Any
 from uuid import uuid4
 
@@ -25,6 +28,125 @@ CATALOG_PATH = get_path_service().get_settings_file("model_catalog")
 # load/edit/save round trip never sends a real secret to the browser.
 CATALOG_SECRET_MASK = "***"
 _SECRET_FIELD_HINTS = ("api_key", "apikey", "token", "secret", "password")
+MODEL_DISCOVERY_CACHE_TTL_SECONDS = 300.0
+MODEL_DISCOVERY_INITIAL_BACKOFF_SECONDS = 60.0
+MODEL_DISCOVERY_MAX_BACKOFF_SECONDS = 900.0
+
+
+@dataclass(slots=True)
+class ModelDiscoveryResult:
+    models: list[str]
+    from_cache: bool = False
+    skipped: bool = False
+    error: str | None = None
+    retry_after: float | None = None
+
+
+@dataclass(slots=True)
+class _ModelDiscoveryCacheEntry:
+    models: list[str] = field(default_factory=list)
+    fetched_at: float = 0.0
+    failure_count: int = 0
+    failed_at: float | None = None
+    next_retry_at: float = 0.0
+    last_error: str | None = None
+
+
+_model_discovery_cache: dict[tuple[str, str, str], _ModelDiscoveryCacheEntry] = {}
+_model_discovery_cache_lock = threading.RLock()
+
+
+def _credential_hash(value: str | None) -> str:
+    if not value:
+        return ""
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def model_discovery_cache_key(
+    provider_name: str,
+    base_url: str,
+    credential: str | None,
+) -> tuple[str, str, str]:
+    return (
+        provider_name.strip().lower(),
+        base_url.strip().rstrip("/"),
+        _credential_hash(credential),
+    )
+
+
+async def discover_models_with_cache(
+    provider_name: str,
+    base_url: str,
+    credential: str | None,
+    fetcher: Callable[[str, str, str | None], Any],
+    *,
+    force_refresh: bool = False,
+    ttl_seconds: float = MODEL_DISCOVERY_CACHE_TTL_SECONDS,
+    initial_backoff_seconds: float = MODEL_DISCOVERY_INITIAL_BACKOFF_SECONDS,
+    max_backoff_seconds: float = MODEL_DISCOVERY_MAX_BACKOFF_SECONDS,
+) -> ModelDiscoveryResult:
+    """Fetch provider models with process-local TTL caching and failure backoff."""
+
+    key = model_discovery_cache_key(provider_name, base_url, credential)
+    now = time.monotonic()
+    with _model_discovery_cache_lock:
+        entry = _model_discovery_cache.get(key)
+        if entry is not None and entry.fetched_at > 0 and not force_refresh:
+            if now - entry.fetched_at < ttl_seconds:
+                return ModelDiscoveryResult(models=list(entry.models), from_cache=True)
+            if entry.next_retry_at > now:
+                return ModelDiscoveryResult(
+                    models=list(entry.models),
+                    from_cache=True,
+                    skipped=True,
+                    error=entry.last_error,
+                    retry_after=entry.next_retry_at - now,
+                )
+        elif entry is not None and entry.next_retry_at > now and not force_refresh:
+            return ModelDiscoveryResult(
+                models=[],
+                skipped=True,
+                error=entry.last_error,
+                retry_after=entry.next_retry_at - now,
+            )
+
+    try:
+        fetched = await fetcher(provider_name, base_url, credential)
+    except Exception as exc:
+        message = str(exc)
+        now = time.monotonic()
+        with _model_discovery_cache_lock:
+            entry = _model_discovery_cache.setdefault(key, _ModelDiscoveryCacheEntry())
+            entry.failure_count += 1
+            backoff = min(
+                max_backoff_seconds,
+                initial_backoff_seconds * (2 ** max(0, entry.failure_count - 1)),
+            )
+            entry.failed_at = now
+            entry.next_retry_at = now + backoff
+            entry.last_error = message
+            cached_models = list(entry.models)
+        return ModelDiscoveryResult(
+            models=cached_models,
+            from_cache=bool(cached_models),
+            skipped=bool(cached_models),
+            error=message,
+            retry_after=backoff,
+        )
+
+    models = [str(model).strip() for model in fetched if str(model).strip()]
+    now = time.monotonic()
+    with _model_discovery_cache_lock:
+        _model_discovery_cache[key] = _ModelDiscoveryCacheEntry(
+            models=models,
+            fetched_at=now,
+        )
+    return ModelDiscoveryResult(models=models)
+
+
+def clear_model_discovery_cache() -> None:
+    with _model_discovery_cache_lock:
+        _model_discovery_cache.clear()
 
 
 def _is_secret_field(name: str) -> bool:
@@ -133,6 +255,8 @@ def _default_catalog() -> dict[str, Any]:
             "search": _search_shell(),
             "tts": _service_shell(),
             "stt": _service_shell(),
+            "imagegen": _service_shell(),
+            "videogen": _service_shell(),
         },
     }
 
@@ -251,9 +375,11 @@ class ModelCatalogService:
         services.setdefault("search", _search_shell())
         services.setdefault("tts", _service_shell())
         services.setdefault("stt", _service_shell())
+        services.setdefault("imagegen", _service_shell())
+        services.setdefault("videogen", _service_shell())
         if _ensure_windows_speech_tts_profile(services["tts"]):
             changed = True
-        for service_name in ("llm", "embedding", "search", "tts", "stt"):
+        for service_name in ("llm", "embedding", "search", "tts", "stt", "imagegen", "videogen"):
             service = services[service_name]
             profiles = service.setdefault("profiles", [])
             for profile in profiles:
@@ -307,7 +433,7 @@ class ModelCatalogService:
             if profiles and service.get("active_profile_id") not in profile_ids:
                 service["active_profile_id"] = profiles[0]["id"]
                 changed = True
-            if service_name in {"llm", "embedding", "tts", "stt"}:
+            if service_name in {"llm", "embedding", "tts", "stt", "imagegen", "videogen"}:
                 active_profile = self.get_active_profile(catalog, service_name)
                 models = (active_profile or {}).get("models") or []
                 model_ids = {model.get("id") for model in models}
@@ -359,8 +485,13 @@ def get_model_catalog_service() -> ModelCatalogService:
 __all__ = [
     "CATALOG_PATH",
     "CATALOG_SECRET_MASK",
+    "MODEL_DISCOVERY_CACHE_TTL_SECONDS",
     "ModelCatalogService",
+    "ModelDiscoveryResult",
+    "clear_model_discovery_cache",
+    "discover_models_with_cache",
     "get_model_catalog_service",
+    "model_discovery_cache_key",
     "redact_catalog_secrets",
     "restore_catalog_secrets",
 ]

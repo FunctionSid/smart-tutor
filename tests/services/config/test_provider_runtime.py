@@ -120,6 +120,60 @@ def test_llm_api_base_keyword_gateway() -> None:
     assert resolved.extra_headers == {"APP-Code": "x"}
 
 
+def test_llm_krutrim_binding_uses_default_endpoint_and_env_key(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("KRUTRIM_API_KEY", "krutrim-env-key")
+    catalog = _build_catalog(
+        llm_profile={
+            "id": "llm-p",
+            "name": "Krutrim Cloud",
+            "binding": "krutrim",
+            "base_url": "",
+            "api_key": "",
+            "api_version": "",
+            "extra_headers": {},
+            "models": [
+                {
+                    "id": "llm-m",
+                    "name": "GLM 5.3 Flash",
+                    "model": "GLM-5.3-Flash",
+                }
+            ],
+        }
+    )
+
+    resolved = resolve_llm_runtime_config(catalog=catalog)
+
+    assert resolved.provider_name == "krutrim"
+    assert resolved.provider_mode == "standard"
+    assert resolved.binding == "krutrim"
+    assert resolved.model == "GLM-5.3-Flash"
+    assert resolved.api_key == "krutrim-env-key"
+    assert resolved.effective_url == "https://cloud.olakrutrim.com/v1"
+
+
+def test_llm_krutrim_base_url_detection_preserves_openai_binding_compatibility() -> None:
+    catalog = _build_catalog(
+        llm_profile={
+            "id": "llm-p",
+            "name": "OpenAI Compatible",
+            "binding": "openai",
+            "base_url": "https://cloud.olakrutrim.com/v1",
+            "api_key": "krutrim-key",
+            "api_version": "",
+            "extra_headers": {},
+            "models": [{"id": "llm-m", "name": "Qwen", "model": "Qwen3.6-27B"}],
+        }
+    )
+
+    resolved = resolve_llm_runtime_config(catalog=catalog)
+
+    assert resolved.provider_name == "krutrim"
+    assert resolved.provider_mode == "standard"
+    assert resolved.effective_url == "https://cloud.olakrutrim.com/v1"
+
+
 def test_llm_orcarouter_binding_uses_default_endpoint() -> None:
     catalog = _build_catalog(
         llm_profile={

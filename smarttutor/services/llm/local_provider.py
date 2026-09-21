@@ -163,6 +163,24 @@ def _extract_message_from_payload(payload: dict[str, object]) -> str:
 DEFAULT_TIMEOUT = 300  # 5 minutes
 
 
+def _is_ollama_endpoint(base_url: str | None) -> bool:
+    """Return whether a local OpenAI-compatible endpoint looks like Ollama."""
+    value = (base_url or "").lower()
+    return ":11434" in value or "ollama" in value
+
+
+def _apply_ollama_thinking_preference(
+    data: dict[str, object],
+    *,
+    base_url: str | None,
+    kwargs: dict[str, object],
+) -> None:
+    """Prefer direct answers from Ollama thinking models unless explicitly overridden."""
+    if not _is_ollama_endpoint(base_url):
+        return
+    data["think"] = bool(kwargs.get("think", False))
+
+
 async def complete(
     prompt: str,
     system_prompt: str = "You are a helpful assistant.",
@@ -215,6 +233,7 @@ async def complete(
         "temperature": kwargs.get("temperature", 0.7),
         "stream": False,
     }
+    _apply_ollama_thinking_preference(data, base_url=base_url, kwargs=kwargs)
 
     # Add optional parameters
     if kwargs.get("max_tokens"):
@@ -299,6 +318,7 @@ async def stream(
         "temperature": kwargs.get("temperature", 0.7),
         "stream": True,
     }
+    _apply_ollama_thinking_preference(data, base_url=base_url, kwargs=kwargs)
 
     if kwargs.get("max_tokens"):
         data["max_tokens"] = kwargs["max_tokens"]

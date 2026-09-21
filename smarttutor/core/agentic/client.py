@@ -45,6 +45,7 @@ _NATIVE_TOOL_BLOCKED_BINDINGS: frozenset[str] = frozenset(
 # adapter-routed but deliberately excluded from this set.
 _NATIVE_TOOL_BACKENDS: frozenset[str] = frozenset({"anthropic", "openai_codex", "codebuddy"})
 _AGENTIC_CLIENT_POOL_MAXSIZE = 2
+_AGENTIC_CLIENT_RETIRE_GRACE_SECONDS = 300.0
 _agentic_client_pool: "OrderedDict[tuple[Any, ...], Any]" = OrderedDict()
 _agentic_client_pool_lock = threading.RLock()
 
@@ -129,6 +130,21 @@ def _schedule_client_close(client: Any, loop: asyncio.AbstractEventLoop) -> None
     loop.create_task(_close())
 
 
+def _schedule_retired_client_close(
+    client: Any,
+    loop: asyncio.AbstractEventLoop,
+    *,
+    grace_seconds: float,
+) -> None:
+    async def _close_later() -> None:
+        if grace_seconds > 0:
+            await asyncio.sleep(grace_seconds)
+        with contextlib.suppress(Exception):
+            await _close_client(client)
+
+    loop.create_task(_close_later())
+
+
 def build_openai_client(config: LLMClientConfig) -> Any:
     """Return a bounded, event-loop-local OpenAI-compatible client.
 
@@ -165,7 +181,11 @@ async def close_agentic_client_pool() -> None:
         await asyncio.gather(*(_close_client(client) for client in clients), return_exceptions=True)
 
 
-def reset_agentic_client_pool() -> None:
+def reset_agentic_client_pool(
+    *,
+    grace_seconds: float = _AGENTIC_CLIENT_RETIRE_GRACE_SECONDS,
+) -> None:
+    """Retire reusable clients while letting active streaming calls drain."""
     with _agentic_client_pool_lock:
         clients = list(_agentic_client_pool.values())
         _agentic_client_pool.clear()
@@ -179,7 +199,7 @@ def reset_agentic_client_pool() -> None:
                 asyncio.run(_close_client(client))
         return
     for client in clients:
-        _schedule_client_close(client, loop)
+        _schedule_retired_client_close(client, loop, grace_seconds=grace_seconds)
 
 
 def agentic_client_pool_size() -> int:

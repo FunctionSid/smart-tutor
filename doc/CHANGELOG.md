@@ -269,3 +269,314 @@ Entries are appended in chronological order. Past entries are never modified.
 - Ordinary speech barge-in currently uses browser RMS activity plus browser echo/noise constraints, not a dedicated browser-side `webrtcvad` or Silero integration.
 - OpenWakeWord emits a SciPy/NumPy compatibility warning in this environment, but the `hey_jarvis` model still loaded and inference executed.
 
+---
+
+## 2026-09-07 - Krutrim Cloud Model Selection and Jarvis Keyboard Toggles
+
+### What was implemented
+- Added Krutrim Cloud as a first-class LLM provider using the OpenAI-compatible endpoint `https://cloud.olakrutrim.com/v1`.
+- Added provider aliases so both `krutrim` and the common misspelling `kutrim` resolve to the same provider adapter.
+- Added runtime credential fallback from `KRUTRIM_API_KEY` and `KRUTRIM_CLOUD_API_KEY`, keeping the API key in the Windows/process environment instead of persisting it in `data/user/settings/model_catalog.json`.
+- Added Krutrim model discovery to `/api/v1/settings/llm-options?refresh_local=true`, alongside the existing Ollama refresh path.
+- Added documented fallback Krutrim models for cases where live discovery cannot return a model list.
+- Added Krutrim to the settings provider quick-select UI and the provider icon mapping.
+- Refreshed the local model catalog with live Krutrim Cloud models available from the configured account:
+  - `gpt-oss-20b`
+  - `gpt-oss-120b`
+  - `gemma-4-E4B-it`
+  - `gemma-4-31b-it`
+  - `gemma-4-26B-A4B-it`
+  - `Qwen3.5-9B`
+  - `Qwen3.6-27B`
+  - `Qwen3.6-35B-A3B`
+  - `gpt-oss-120b-at`
+  - `GLM-5.3-Flash`
+- Added a global Hands-Free toggle event used by the chat composer and Hands-Free control.
+- Added Smart Tutor browser shortcuts while the app is focused:
+  - `Ctrl+H` toggles Hands-Free on/off.
+  - `Ctrl+R` starts manual voice recording; pressing `Ctrl+R` again stops recording.
+  - `Ctrl+R` prevents the browser reload shortcut while handled by the composer.
+- Changed Hands-Free settings hydration so a saved enabled state starts wake listening when the Smart Tutor page is focused.
+- Preserved the existing Hands-Free/RAG behavior: dictated or wake-captured text still goes through the normal `onSend` chat path, so the selected model and selected knowledge/RAG context are used together.
+
+### Files changed
+- Backend provider/runtime:
+  - `smarttutor/services/provider_registry.py`
+  - `smarttutor/services/config/provider_runtime.py`
+  - `smarttutor/api/routers/settings.py`
+- Frontend model settings:
+  - `web/components/settings/ServiceConfigEditor.tsx`
+  - `web/components/common/ProviderIcon.tsx`
+- Frontend Hands-Free/Jarvis:
+  - `web/lib/hands-free-settings.ts`
+  - `web/components/chat/home/HandsFreeControl.tsx`
+  - `web/components/chat/home/ChatComposer.tsx`
+- Tests:
+  - `tests/api/test_settings_router.py`
+  - `tests/services/config/test_provider_runtime.py`
+  - `web/tests/hands-free.test.ts`
+- Documentation:
+  - `doc/SMART_TUTOR_STATE.md`
+  - `doc/CHANGELOG.md`
+
+### What was verified
+- Confirmed a Krutrim API key exists in the Windows/process environment. The value was not printed, stored, or committed.
+- Live Krutrim `/v1/models` discovery returned 10 selectable model IDs and populated the Krutrim Cloud profile.
+- Live Smart Tutor runtime smoke test with Krutrim `gpt-oss-20b` returned `SmartTutor Krutrim OK`.
+- Live OpenAI-style tool-call probe with Krutrim `gpt-oss-20b` returned the expected tool call, confirming the core RAG-agent tool path works for that model.
+- `.\.venv\Scripts\python.exe -m pytest tests\services\config\test_provider_runtime.py tests\api\test_settings_router.py -q` passed: 97 tests.
+- `npm run test:node -- hands-free.test.ts` passed: 609 tests.
+- `npx eslint components\chat\home\ChatComposer.tsx components\chat\home\HandsFreeControl.tsx lib\hands-free-settings.ts tests\hands-free.test.ts` passed with zero errors.
+
+### What is working
+- Krutrim Cloud appears as a selectable provider beside Ollama/OpenAI.
+- All discovered Krutrim Cloud model IDs are selectable in Smart Tutor.
+- Runtime model routing uses the selected Krutrim profile/model and the env-held API key.
+- The selected Krutrim model can be used through the same chat path as RAG/knowledge context.
+- `Ctrl+H` toggles Hands-Free on/off when the Smart Tutor browser tab/window is focused.
+- `Ctrl+R` starts and stops manual recording without reloading the browser.
+- A saved enabled Hands-Free state resumes wake listening when the focused Smart Tutor page mounts.
+
+### What is still not working / not fully verified
+- Each Krutrim model was not individually tested for streaming, output quality, and OpenAI-compatible tool-calling. `gpt-oss-20b` was verified for both ordinary completion and tool calling; other discovered models are selectable but may have provider-specific behavior.
+- No live spoken microphone test of the actual phrase "Hey Jarvis" was performed during this update.
+- No live Playwright browser test with real microphone input was performed for `Ctrl+H`/`Ctrl+R`; the shortcut wiring is covered by focused source-level regression tests and ESLint.
+- NVDA/manual screen-reader verification was not performed for the updated Hands-Free shortcut flow.
+- Ordinary speech barge-in still uses browser RMS activity and browser echo/noise constraints, not a dedicated browser-side VAD engine.
+
+---
+
+## 2026-09-09 - Phase 1: Model Discovery Stability
+
+### What was implemented
+- Completed focused verification coverage for the provider model discovery cache.
+- Added cache isolation to LLM options router tests so process-local cached models cannot make an offline provider test pass or fail for the wrong reason.
+- Verified the existing discovery flow uses the shared cache for Ollama, Krutrim, and the settings "Fetch models" endpoint.
+
+### Files changed
+- `tests/services/config/test_model_catalog_secrets.py`
+- `tests/api/test_settings_router.py`
+- `doc/SMART_TUTOR_STATE.md`
+- `doc/OPTIMIZATION_RECOMMENDATIONS.md`
+- `doc/CHANGELOG.md`
+
+### What was verified
+- `.\.venv\Scripts\python.exe -m pytest tests\services\config\test_model_catalog_secrets.py -q` passed: 8 tests.
+- `.\.venv\Scripts\python.exe -m pytest tests\api\test_settings_router.py::test_llm_options_refresh_seeds_missing_ollama_profile tests\api\test_settings_router.py::test_llm_options_refresh_does_not_persist_empty_ollama_profile tests\api\test_settings_router.py::test_llm_options_refresh_seeds_krutrim_from_env tests\api\test_settings_router.py::test_fetch_models_resolves_masked_key_server_side tests\api\test_settings_router.py::test_fetch_models_maps_provider_error_to_502 -q` passed: 5 tests.
+- `.\.venv\Scripts\python.exe -m pytest tests\services\config\test_model_catalog_secrets.py tests\api\test_settings_router.py tests\services\llm\test_local_provider.py tests\services\model_selection\test_llm_selection.py -q` passed: 81 tests.
+- `npm run test:node -- llm-options` passed: 609 tests.
+- `npx tsc --noEmit` passed.
+- `npx eslint hooks\useLLMOptions.ts lib\llm-options.ts tests\llm-options-transport.test.ts tests\llm-options-state.test.ts` passed with zero output.
+- `git diff --check` passed.
+
+### Known limitations
+- Live provider matrix smoke with Ollama/Krutrim combinations was not added in this phase; it belongs to the Phase 2 repeatable health-smoke command.
+
+---
+
+## 2026-09-10 - Startup Reliability, Hands-Free Verification, and Stability Smoke
+
+### What was implemented
+- Made the Windows BAT startup flow wait for backend/frontend readiness before opening the browser.
+- Kept the frontend source of truth in `web/package.json`; the verified frontend URL is `http://localhost:3782`, and the verified backend URL is `http://127.0.0.1:8001`.
+- Added safeguards so startup checks Python, Node, and npm before launching Smart Tutor, avoids duplicate source frontend processes, and leaves useful terminal output on failure.
+- Added logging to previously swallowed backend exception paths in startup/provider/RAG code so failures are easier to diagnose.
+- Added the repeatable smoke command `scripts/smoke_smart_tutor.py`.
+- Added read-only/admin-gated `GET /api/v1/system/diagnostics` for provider-pool and LlamaIndex index-cache diagnostics.
+- Fixed Windows frontend lint reliability by routing `npm run lint` through a wrapper script.
+- Fixed the Exam runner lint/runtime ordering issue around `handleSubmit`.
+- Fixed Hands-Free control focus behavior so pressing Space or Enter after clicking the Hands-Free button does not accidentally retrigger Hands-Free/TTS.
+- Fixed wake-word runtime resolution so the wake probe can use the configured global STT Python when OpenWakeWord is installed there.
+
+### Files changed
+- `start-smart-tutor.bat`
+- `smarttutor/runtime/launcher.py`
+- `smarttutor/services/llm/provider_core/codebuddy_provider.py`
+- `smarttutor/services/rag/pipelines/modes.py`
+- `smarttutor/services/voice/wake.py`
+- `smarttutor/api/routers/system.py`
+- `scripts/smoke_smart_tutor.py`
+- `web/scripts/lint.mjs`
+- `web/package.json`
+- `web/components/exam/ExamRunner.tsx`
+- `web/components/chat/home/HandsFreeControl.tsx`
+- `web/tests/hands-free.test.ts`
+- `tests/services/test_voice.py`
+- Documentation in `doc/`
+
+### What was verified
+- Running the BAT starts Smart Tutor and opens the browser only after readiness.
+- Frontend verified live at `http://localhost:3782`; backend verified live at `http://127.0.0.1:8001`.
+- Live smoke suite result: `9 passed, 0 skipped, 0 failed`.
+- Live wake endpoint returned `loadable: true` for `hey_jarvis`.
+- Live TTS endpoint returned `200`, `audio/mpeg`, and audio bytes.
+- Live STT endpoint accepted a generated silence WAV and returned `200` with an empty transcript, as expected for silence.
+- `npm run test:node` passed with 610 tests.
+- `npm run build` passed.
+- `npm run lint` passed with 0 errors and 129 existing warnings.
+- Focused Python voice route/service tests passed: 38 tests.
+- Focused backend stability tests passed: 35 tests.
+
+### Current status
+- Startup, Exam, Settings, main chat/RAG, memory, model selection, MCP, and backend Hands-Free voice services are working in the verified local setup.
+- Hands-Free can be toggled with `Ctrl+H`; manual recording can be toggled with `Ctrl+R`; Space/Enter no longer retrigger the Hands-Free button after click focus.
+- The remaining Hands-Free gap is physical end-to-end microphone/speaker verification: a real spoken "Hey Jarvis" journey in the browser was not manually performed.
+- The remaining frontend tooling gap is warning cleanup: lint now completes, but 129 existing warnings remain.
+
+---
+
+## 2026-09-10 - Frontend Link and Keyboard Accessibility Audit
+
+### What was checked
+- Started the live Smart Tutor app at `http://localhost:3782` with backend at `http://127.0.0.1:8001`.
+- Ran the existing `npm run audit` command.
+- Because the default Playwright Chromium binary is missing locally, ran a Microsoft Edge based Playwright crawl instead, matching the browser channel used by existing repo scripts.
+- Crawled 39 internal frontend routes/links, checking HTTP status, visible H1, main landmark, visible links, visible interactive controls, console errors, and basic Tab focus behavior.
+- Ran a focused slow recheck for routes that logged fetch errors during the fast crawl.
+- Verified Settings tab keyboard behavior with ArrowRight from Student Settings to Advanced Settings.
+
+### What is working
+- Main visible app navigation loads from `http://localhost:3782`.
+- 39 internal routes were visited; all discovered app routes loaded with HTTP 200 except the manually seeded `/settings/voice`.
+- `/settings/voice` is not referenced in current source navigation; the real voice settings routes are `/settings/stt` and `/settings/tts`.
+- Focused rechecks of `/exam`, `/knowledge`, `/settings/network`, and `/settings/mcp` returned HTTP 200 and no console errors.
+- Settings tab keyboard navigation works: ArrowRight changes the active tab from Student Settings to Advanced Settings.
+- Main workspace pages such as `/`, `/home`, `/settings`, `/exam`, `/knowledge`, `/memory`, `/notebook`, `/space`, `/partners`, `/playground`, and the settings leaf pages are keyboard reachable in the Tab crawl.
+- `/space/mcp` and `/settings/mcp` load; the optional `local_tutoring` MCP server logged connection failures because `start-mcp.bat` was not running during this audit.
+
+### Loose ends found
+- `npm run audit` fails before testing the app because Playwright's default Chromium executable is missing from the local Playwright cache.
+- `/whisper`, `/memory/l1`, `/memory/l2`, and `/memory/l3` render but do not expose a top-level H1 in the audit.
+- Several settings controls are keyboard reachable but need explicit accessible names:
+  - Student Settings auto-play switch.
+  - Student Settings Hands-Free switch.
+  - Student Settings wake-word input.
+  - Capability enable switch.
+  - Memory settings switches.
+  - Embedding settings "Send dimensions" checkbox.
+- The fast crawl can produce false console errors when it navigates away before a page's async fetch finishes; focused slow rechecks did not reproduce those errors on the checked pages.
+
+### Current status
+- Frontend links/navigation are mostly working and reachable.
+- The site is not yet fully keyboard/screen-reader polished because of the missing H1s and unnamed controls above.
+- No application code was changed during this audit entry.
+
+---
+
+## 2026-09-10 - Frontend Accessibility Cleanup
+
+### What was fixed
+- Added an H1 to `/whisper` by using the existing visible Whisper title as the page heading.
+- Added screen-reader H1s to `/memory/l1`, `/memory/l2`, and `/memory/l3` without changing the existing visual layout.
+- Added explicit accessible names to the audited Settings controls:
+  - Student Settings auto-play switch.
+  - Student Settings Hands-Free switch.
+  - Student Settings wake-word input.
+  - Capability settings switches.
+  - Memory settings switches.
+  - Embedding settings "Send dimensions" checkbox.
+- Added explicit accessible names to related Student Settings selects for LLM profile, active model, STT, TTS, and SAPI voice to keep the audited settings surface consistent.
+
+### Files changed
+- `web/app/(workspace)/whisper/page.tsx`
+- `web/components/memory/MemoryL1Workbench.tsx`
+- `web/components/memory/MemoryWorkbench.tsx`
+- `web/components/settings/SettingsHub.tsx`
+- `web/app/(utility)/settings/capabilities/page.tsx`
+- `web/app/(utility)/settings/memory/page.tsx`
+- `web/components/settings/ServiceConfigEditor.tsx`
+- `doc/SMART_TUTOR_STATE.md`
+- `doc/CHANGELOG.md`
+
+### What was intentionally preserved
+- No routes, APIs, backend behavior, model/provider logic, RAG behavior, Exam behavior, Hands-Free state logic, MCP behavior, or memory architecture were changed.
+- The frontend error-handling audit areas were inspected, including `web/lib/unified-ws.ts` and `web/components/notebook/useNotebookSelection.ts`. No code was changed there because the current behavior is intentional fallback/reconnect/logging behavior, and changing it would require broader notification-flow work.
+
+### What was verified
+- `npm run lint -- 'app/(workspace)/whisper/page.tsx' 'components/memory/MemoryL1Workbench.tsx' 'components/memory/MemoryWorkbench.tsx' 'components/settings/SettingsHub.tsx' 'app/(utility)/settings/capabilities/page.tsx' 'app/(utility)/settings/memory/page.tsx' 'components/settings/ServiceConfigEditor.tsx'` passed with 0 errors and the existing 129 warnings.
+- `npm run test:node` passed: 610 tests.
+- `npm run build` passed. Existing Browserslist/caniuse-lite age warning remains.
+- `npm run audit` still fails before app testing because the local Playwright Chromium executable is missing from `C:\Users\Sourabh\AppData\Local\ms-playwright`.
+- Microsoft Edge Playwright verification passed for `/whisper`, `/memory/l1`, `/memory/l2`, `/memory/l3`, `/settings`, `/settings/stt`, `/settings/tts`, `/settings/mcp`, `/settings/network`, `/exam`, and `/knowledge`: all returned HTTP 200, exposed H1s, had no nameless visible controls in the checked routes, and logged no browser console errors.
+- Settings keyboard navigation still works: ArrowRight moved the active tab from Student Settings to Advanced Settings.
+
+### Remaining limitations
+- `/settings/student`, `/settings/advanced`, and `/settings/voice` are not current routes. Student and Advanced are tabs on `/settings`; the active voice routes are `/settings/stt` and `/settings/tts`.
+- The default Playwright Chromium cache is still missing; Edge-based verification works.
+- Existing frontend lint warnings remain and were not part of this cleanup.
+
+---
+
+## 2026-09-11 - Memory Run Status and Model Selection Truthfulness
+
+### What was fixed
+- Memory update/audit/dedup runs now reject invalid explicit LLM selections instead of silently falling back to the default model.
+- Valid explicit LLM selections emit a `model_selected` run event with the resolved provider/model.
+- Memory LLM calls still fall back from streaming to non-streaming when supported, but total LLM failure now ends the run as an error instead of returning an empty response.
+- Memory Run UI now displays selected-model, no-new-input, no-doc, and no-change outcomes in the run timeline.
+
+### Files changed
+- `smarttutor/services/memory/consolidator/modes/_runtime.py`
+- `smarttutor/services/memory/consolidator/modes/update.py`
+- `smarttutor/services/memory/consolidator/modes/audit.py`
+- `smarttutor/services/memory/consolidator/modes/dedup.py`
+- `web/components/memory/MemoryRunPanel.tsx`
+- `tests/services/memory/test_modes.py`
+- `doc/PRACTICE_BACKGROUND_FOREGROUND_INVESTIGATION.md`
+- `doc/SMART_TUTOR_STATE.md`
+- `doc/OPTIMIZATION_RECOMMENDATIONS.md`
+- `doc/CHANGELOG.md`
+
+### What was intentionally preserved
+- No memory schema, storage layout, snapshot adapters, L1/L2/L3 architecture, chat memory injection behavior, LearningStore, Exam scoring, RAG pipeline, or model catalog format was redesigned.
+- No real user memory docs were generated or mutated during verification.
+
+### What was verified
+- `.\.venv\Scripts\python.exe -m pytest tests\services\memory\test_modes.py -q`: 11 passed.
+- `.\.venv\Scripts\python.exe -m pytest tests\services\memory tests\api\test_memory_resolver.py tests\services\session\test_turn_runtime.py -q`: 194 passed.
+- `npx tsc --noEmit --pretty false`: passed.
+- `npm run lint -- components/memory/MemoryRunPanel.tsx`: passed with 0 errors and the existing 129 warnings.
+
+### Remaining limitations
+- L2/L3 memory docs still need an intentional Memory Run over real data before they can personalize chat usefully.
+- MemoryPicker still exposes fewer labels than the backend L3 slots and still causes full L3 concat injection when any memory ref is selected.
+
+---
+
+## 2026-09-11 - Learning Activity Evidence Into Memory
+
+### What was fixed
+- Extended the existing `quiz` memory snapshot surface to read compact evidence from:
+  - question/notebook quiz rows,
+  - authoritative `LearningStore` mastery/progress paths,
+  - saved exam attempt results.
+- Added a disposable L1 -> L2 -> L3 test proving LearningStore evidence can become L2 quiz memory and L3 scope memory through the existing consolidator.
+- Added logging for exam learning-progress write failures without changing exam scoring/submission behavior.
+
+### Files changed
+- `smarttutor/services/memory/snapshot/adapters.py`
+- `smarttutor/exam/service.py`
+- `tests/services/memory/test_snapshot_adapters.py`
+- `tests/services/memory/test_modes.py`
+- `doc/PRACTICE_BACKGROUND_FOREGROUND_INVESTIGATION.md`
+- `doc/SMART_TUTOR_STATE.md`
+- `doc/OPTIMIZATION_RECOMMENDATIONS.md`
+- `doc/CHANGELOG.md`
+
+### What was intentionally preserved
+- No new Memory database, surface, queue, schema, or background framework was added.
+- `LearningStore` remains authoritative for mastery/progress.
+- Exam result files remain authoritative for submitted exam attempts.
+- No real user L2/L3 memory docs were generated or mutated.
+
+### What was verified
+- `.\.venv\Scripts\python.exe -m pytest tests\services\memory\test_snapshot_adapters.py -q`: 9 passed.
+- `.\.venv\Scripts\python.exe -m pytest tests\services\memory\test_modes.py -q`: 12 passed.
+- `.\.venv\Scripts\python.exe -m pytest tests\services\memory tests\api\test_memory_resolver.py tests\services\session\test_turn_runtime.py -q`: 197 passed.
+- `.\.venv\Scripts\python.exe -m pytest smarttutor\learning\tests tests\exam\test_exam_learning_integration.py tests\api\test_notebook_router.py::test_quiz_results_update_learning_progress -q`: 298 passed.
+- `.\.venv\Scripts\python.exe -m pytest tests\exam\test_exam_learning_integration.py -q`: 1 passed.
+
+### Remaining limitations
+- The real workspace still needs an intentional Memory Run before L2/L3 can personalize chat.
+- Background auto-consolidation was not added.
+- Browser Playwright verification was not rerun because this change is backend snapshot/consolidator behavior.

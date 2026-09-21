@@ -222,7 +222,11 @@ export default function ExamGeneratorModal({ isOpen, onClose, onGenerated }: Exa
               error={llmOptionsError}
               onChange={setLLMSelection}
               onRefresh={() =>
-                void refreshLLMOptions({ force: true, refreshLocal: true })
+                void refreshLLMOptions({
+                  force: true,
+                  refreshLocal: true,
+                  forceRefresh: true,
+                })
               }
             />
           </div>

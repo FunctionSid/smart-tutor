@@ -124,7 +124,7 @@ export function ServiceConfigEditor({ service }: { service: ServiceName }) {
     if (showApiKey) setShowApiKey(false);
   }
 
-  const selectTutorProvider = (binding: "openai" | "ollama") => {
+  const selectTutorProvider = (binding: "openai" | "ollama" | "krutrim") => {
     if (service !== "llm") return;
     mutateCatalog((next) => {
       const target = next.services.llm;
@@ -142,7 +142,12 @@ export function ServiceConfigEditor({ service }: { service: ServiceName }) {
       );
       const profileId = `llm-profile-${Date.now()}`;
       const modelId = `llm-model-${Date.now()}`;
-      const modelName = binding === "openai" ? "gpt-4.1" : "";
+      const modelName =
+        binding === "openai"
+          ? "gpt-4.1"
+          : binding === "krutrim"
+            ? "Krutrim-spectre-v2"
+            : "";
       target.profiles.push({
         id: profileId,
         name: providerOption?.label ?? (binding === "openai" ? "OpenAI" : "Ollama"),
@@ -151,7 +156,9 @@ export function ServiceConfigEditor({ service }: { service: ServiceName }) {
           providerOption?.base_url ??
           (binding === "ollama"
             ? "http://localhost:11434/v1"
-            : "https://api.openai.com/v1"),
+            : binding === "krutrim"
+              ? "https://cloud.olakrutrim.com/v1"
+              : "https://api.openai.com/v1"),
         api_key: "",
         api_version: "",
         extra_headers: {},
@@ -165,6 +172,8 @@ export function ServiceConfigEditor({ service }: { service: ServiceName }) {
     setToast(
       binding === "ollama"
         ? t("Local Ollama selected. Sync models to discover installed models.")
+        : binding === "krutrim"
+          ? t("Krutrim Cloud selected. Sync models to discover available models.")
         : t("OpenAI selected."),
     );
   };
@@ -239,6 +248,7 @@ export function ServiceConfigEditor({ service }: { service: ServiceName }) {
           base_url: baseUrl,
           api_key: apiKey || null,
           profile_id: profileId,
+          force_refresh: true,
         }),
       });
       if (!response.ok) {
@@ -372,7 +382,7 @@ export function ServiceConfigEditor({ service }: { service: ServiceName }) {
           <div
             role="radiogroup"
             aria-label={t("AI provider")}
-            className="grid gap-2 sm:grid-cols-2"
+            className="grid gap-2 sm:grid-cols-3"
           >
             {[
               {
@@ -381,15 +391,17 @@ export function ServiceConfigEditor({ service }: { service: ServiceName }) {
                 detail: t("Uses your OpenAI API key for Tutor and chat."),
               },
               {
+                value: "krutrim" as const,
+                label: t("Krutrim Cloud"),
+                detail: t("Uses your Krutrim Cloud API key and hosted models."),
+              },
+              {
                 value: "ollama" as const,
                 label: t("Local (Ollama)"),
                 detail: t("Uses models installed on your Ollama server."),
               },
             ].map((item) => {
-              const selected =
-                item.value === "ollama"
-                  ? activeProviderValue === "ollama"
-                  : activeProviderValue !== "ollama";
+              const selected = activeProviderValue === item.value;
               return (
                 <button
                   key={item.value}
@@ -844,6 +856,7 @@ export function ServiceConfigEditor({ service }: { service: ServiceName }) {
                           <label className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-[var(--muted-foreground)] select-none">
                             <input
                               type="checkbox"
+                              aria-label={t("Send dimensions")}
                               className="h-3 w-3 cursor-pointer accent-[var(--foreground)]"
                               checked={activeModel.send_dimensions !== false}
                               onChange={(e) =>

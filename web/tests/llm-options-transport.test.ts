@@ -61,6 +61,13 @@ test("local model refresh asks the backend to discover local providers", async (
   try {
     await listLLMOptions({ force: true, refreshLocal: true });
     assert.match(requested, /refresh_local=true/);
+    assert.doesNotMatch(requested, /force_refresh=true/);
+    await listLLMOptions({
+      force: true,
+      refreshLocal: true,
+      forceRefresh: true,
+    });
+    assert.match(requested, /force_refresh=true/);
   } finally {
     invalidateLLMOptionsCache();
     globalThis.fetch = originalFetch;

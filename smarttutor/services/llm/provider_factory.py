@@ -15,6 +15,7 @@ from smarttutor.services.llm.provider_core.base import GenerationSettings, LLMPr
 from smarttutor.services.provider_registry import find_by_name
 
 _PROVIDER_POOL_MAXSIZE = 2
+_PROVIDER_RETIRE_GRACE_SECONDS = 300.0
 _provider_pool: "OrderedDict[tuple[Any, ...], LLMProvider]" = OrderedDict()
 _provider_pool_lock = threading.RLock()
 
@@ -116,6 +117,21 @@ def _schedule_close(provider: LLMProvider, loop: asyncio.AbstractEventLoop) -> N
     loop.create_task(_close())
 
 
+def _schedule_retired_close(
+    provider: LLMProvider,
+    loop: asyncio.AbstractEventLoop,
+    *,
+    grace_seconds: float,
+) -> None:
+    async def _close_later() -> None:
+        if grace_seconds > 0:
+            await asyncio.sleep(grace_seconds)
+        with contextlib.suppress(Exception):
+            await provider.aclose()
+
+    loop.create_task(_close_later())
+
+
 def get_runtime_provider(config: LLMConfig | None = None) -> LLMProvider:
     """Return a small event-loop-local pool entry for the supplied config.
 
@@ -154,8 +170,14 @@ async def close_runtime_provider_pool() -> None:
         await asyncio.gather(*(provider.aclose() for provider in providers), return_exceptions=True)
 
 
-def reset_runtime_provider_pool() -> None:
-    """Clear the pool from synchronous cache-invalidation call sites."""
+def reset_runtime_provider_pool(*, grace_seconds: float = _PROVIDER_RETIRE_GRACE_SECONDS) -> None:
+    """Retire pooled providers without interrupting in-flight users.
+
+    Settings changes must make future lookups resolve fresh clients right away,
+    but an active streaming turn may still hold a provider from this pool.
+    Removing entries from the pool is immediate; closing their sockets is
+    delayed long enough for normal turns to drain.
+    """
     with _provider_pool_lock:
         providers = list(_provider_pool.values())
         _provider_pool.clear()
@@ -169,7 +191,7 @@ def reset_runtime_provider_pool() -> None:
                 asyncio.run(provider.aclose())
         return
     for provider in providers:
-        _schedule_close(provider, loop)
+        _schedule_retired_close(provider, loop, grace_seconds=grace_seconds)
 
 
 def runtime_provider_pool_size() -> int:
@@ -178,9 +200,18 @@ def runtime_provider_pool_size() -> int:
         return len(_provider_pool)
 
 
+def runtime_provider_pool_diagnostics() -> dict[str, int]:
+    """Return read-only provider-pool state for operator diagnostics."""
+    return {
+        "size": runtime_provider_pool_size(),
+        "max_size": _PROVIDER_POOL_MAXSIZE,
+    }
+
+
 __all__ = [
     "close_runtime_provider_pool",
     "get_runtime_provider",
     "reset_runtime_provider_pool",
+    "runtime_provider_pool_diagnostics",
     "runtime_provider_pool_size",
 ]

@@ -138,3 +138,44 @@ async def test_memory_usage_unavailable_when_no_process_can_be_read(
     payload = await system_router.get_memory_usage()
 
     assert payload == {"available": False}
+
+
+@pytest.mark.asyncio
+async def test_runtime_diagnostics_are_withheld_from_non_admins(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(system_router, "get_current_user", lambda: SimpleNamespace(is_admin=False))
+
+    payload = await system_router.get_runtime_diagnostics()
+
+    assert payload == {"available": False}
+
+
+@pytest.mark.asyncio
+async def test_runtime_diagnostics_report_read_only_cache_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(system_router, "get_current_user", lambda: SimpleNamespace(is_admin=True))
+    monkeypatch.setattr(
+        "smarttutor.services.llm.provider_factory.runtime_provider_pool_diagnostics",
+        lambda: {"size": 1, "max_size": 2},
+    )
+    monkeypatch.setattr(
+        "smarttutor.services.rag.pipelines.llamaindex.storage.index_cache_diagnostics",
+        lambda: {"size": 0, "max_size": 2, "idle_seconds": 600, "entries": []},
+    )
+
+    payload = await system_router.get_runtime_diagnostics()
+
+    assert payload == {
+        "available": True,
+        "provider_pool": {"size": 1, "max_size": 2},
+        "rag": {
+            "llamaindex_index_cache": {
+                "size": 0,
+                "max_size": 2,
+                "idle_seconds": 600,
+                "entries": [],
+            },
+        },
+    }

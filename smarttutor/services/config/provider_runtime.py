@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
+import os
 from typing import Any
 from urllib.parse import urlparse
 
@@ -720,6 +721,18 @@ def _collect_provider_pool(catalog: dict[str, Any]) -> dict[str, NormalizedProvi
     return providers
 
 
+def _env_api_key_for(spec: ProviderSpec) -> str:
+    """Return a process-env credential for *spec*, including declared aliases."""
+    keys = [spec.env_key, *(name for name, _ in spec.env_extras)]
+    for key in keys:
+        if not key:
+            continue
+        value = _as_str(os.environ.get(key))
+        if value:
+            return value
+    return ""
+
+
 def _choose_resolved_provider(
     *,
     hint: str | None,
@@ -806,7 +819,7 @@ def resolve_llm_runtime_config(
     )
 
     mapped = provider_pool.get(spec.name)
-    api_key = active_api_key or (mapped.api_key if mapped else "")
+    api_key = active_api_key or (mapped.api_key if mapped else "") or _env_api_key_for(spec)
     api_base = active_api_base or ((mapped.api_base or "") if mapped else "")
     api_version = active_api_version or ((mapped.api_version or "") if mapped else "")
     if not api_base and spec.default_api_base:

@@ -204,6 +204,24 @@ async def get_memory_usage():
     }
 
 
+@router.get("/diagnostics")
+async def get_runtime_diagnostics():
+    """Read-only runtime knobs and cache sizes for local stability checks."""
+    if not get_current_user().is_admin:
+        return {"available": False}
+
+    from smarttutor.services.llm.provider_factory import runtime_provider_pool_diagnostics
+    from smarttutor.services.rag.pipelines.llamaindex.storage import index_cache_diagnostics
+
+    return {
+        "available": True,
+        "provider_pool": runtime_provider_pool_diagnostics(),
+        "rag": {
+            "llamaindex_index_cache": index_cache_diagnostics(),
+        },
+    }
+
+
 @router.post("/test/llm", response_model=TestResponse)
 async def test_llm_connection():
     """

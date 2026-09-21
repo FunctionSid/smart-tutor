@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
 import json
+import logging
 import os
 import re
 import shutil
@@ -28,6 +29,7 @@ _API_KEY_ENV_LOCK = asyncio.Lock()
 _SESSION_POOL_MAXSIZE = 4
 _MCP_SERVER_NAME = "smarttutor"
 _MCP_TOOL_PREFIX = f"mcp__{_MCP_SERVER_NAME}__"
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -113,7 +115,7 @@ class _CodeBuddySession:
             try:
                 await client.disconnect()
             except BaseException:
-                pass
+                logger.debug("Failed to disconnect CodeBuddy client", exc_info=True)
 
     async def run_turn(
         self,
@@ -142,7 +144,7 @@ class _CodeBuddySession:
         try:
             await owner
         except Exception:
-            pass
+            logger.debug("CodeBuddy session owner exited during close", exc_info=True)
 
 
 class CodeBuddyProvider(LLMProvider):
@@ -361,7 +363,7 @@ class CodeBuddyProvider(LLMProvider):
                 if task is not None:
                     task.uncancel()
             except Exception:
-                pass
+                logger.debug("Failed to close CodeBuddy session", exc_info=True)
 
     def get_default_model(self) -> str:
         return self.default_model
@@ -551,7 +553,7 @@ async def _consume_messages(
                     await interrupt()
                     await _drain_interrupted_response(messages)
                 except Exception:
-                    pass
+                    logger.debug("Failed to interrupt CodeBuddy stream", exc_info=True)
             return LLMResponse(
                 content="".join(chunks),
                 tool_calls=tool_calls,

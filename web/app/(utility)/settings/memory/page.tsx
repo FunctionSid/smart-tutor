@@ -330,6 +330,7 @@ function ToggleRow({ label, help, value, onChange }: ToggleRowProps) {
         <button
           type="button"
           role="switch"
+          aria-label={label}
           aria-checked={value}
           onClick={() => onChange(!value)}
           className={

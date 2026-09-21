@@ -414,6 +414,7 @@ export default function SettingsHub() {
                 {tr({ zh: "提供商配置", en: "LLM Profile" })}
               </label>
               <select
+                aria-label={tr({ zh: "提供商配置", en: "LLM Profile" })}
                 className={`mt-2 ${selectClass}`}
                 value={activeLlmProfile?.id || ""}
                 onChange={(e) => {
@@ -441,6 +442,7 @@ export default function SettingsHub() {
                 {tr({ zh: "模型名称", en: "Active Model" })}
               </label>
               <select
+                aria-label={tr({ zh: "模型名称", en: "Active Model" })}
                 className={`mt-2 ${selectClass}`}
                 value={activeLlmModel?.id || ""}
                 onChange={(e) => {
@@ -477,6 +479,7 @@ export default function SettingsHub() {
                 <Mic size={14} /> {tr({ zh: "语音输入 (STT)", en: "Speech-to-Text (STT)" })}
               </div>
               <select
+                aria-label={tr({ zh: "语音输入", en: "Speech-to-Text" })}
                 className={`mt-2 ${selectClass}`}
                 value={activeSttProfile?.id || ""}
                 onChange={(e) => {
@@ -501,6 +504,7 @@ export default function SettingsHub() {
                 <AudioLines size={14} /> {tr({ zh: "语音朗读 (TTS)", en: "Text-to-Speech (TTS)" })}
               </div>
               <select
+                aria-label={tr({ zh: "语音朗读", en: "Text-to-Speech" })}
                 className={`mt-2 ${selectClass}`}
                 value={activeTtsProfile?.id || ""}
                 onChange={(e) => {
@@ -536,6 +540,7 @@ export default function SettingsHub() {
             <button
               type="button"
               role="switch"
+              aria-label={tr({ zh: "自动朗读回复", en: "Auto-play replies aloud" })}
               aria-checked={autoplay}
               disabled={autoplayLoading}
               onClick={() => setAutoplay(!autoplay)}
@@ -567,6 +572,7 @@ export default function SettingsHub() {
               <button
                 type="button"
                 role="switch"
+                aria-label={tr({ zh: "免手动语音", en: "Hands-Free" })}
                 aria-checked={handsFree.enabled}
                 onClick={() => updateHandsFree({ enabled: !handsFree.enabled })}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
@@ -586,13 +592,19 @@ export default function SettingsHub() {
                 <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
                   {tr({ zh: "唤醒词", en: "Wake word" })}
                 </span>
-                <input className={`mt-2 ${inputClass}`} value="Hey Jarvis" readOnly />
+                <input
+                  aria-label={tr({ zh: "唤醒词", en: "Wake word" })}
+                  className={`mt-2 ${inputClass}`}
+                  value="Hey Jarvis"
+                  readOnly
+                />
               </label>
               <label className="block">
                 <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
                   {tr({ zh: "SAPI 声音", en: "SAPI Voice" })}
                 </span>
                 <select
+                  aria-label={tr({ zh: "SAPI 声音", en: "SAPI Voice" })}
                   className={`mt-2 ${selectClass}`}
                   value={handsFree.sapiVoice}
                   onChange={(event) => updateHandsFree({ sapiVoice: event.target.value })}

@@ -23,7 +23,6 @@ gets counted against the budget.
 from __future__ import annotations
 
 from dataclasses import dataclass
-import logging
 
 from smarttutor.services.memory import paths
 from smarttutor.services.memory import snapshot as snap
@@ -38,6 +37,7 @@ from smarttutor.services.memory.consolidator.line_doc import (
 )
 from smarttutor.services.memory.consolidator.modes._runtime import (
     OnEvent,
+    activate_run_llm_selection,
     call_llm,
     emit,
     load_doc,
@@ -55,9 +55,6 @@ from smarttutor.services.memory.document import Document, Entry
 from smarttutor.services.memory.paths import L3Slot, Surface
 from smarttutor.services.memory.settings import load_memory_settings
 from smarttutor.services.memory.snapshot.entity import Entity
-
-logger = logging.getLogger(__name__)
-
 
 @dataclass
 class AuditResult:
@@ -83,21 +80,13 @@ async def run_audit(
     on_event: OnEvent | None = None,
 ) -> AuditResult:
     from smarttutor.services.model_selection.runtime import (
-        activate_llm_selection,
         reset_llm_selection,
     )
 
     settings = load_memory_settings()
     token = None
-    if llm_selection:
-        try:
-            _config, token = activate_llm_selection(llm_selection)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "memory audit: ignoring unresolvable llm_selection %s: %s", llm_selection, exc
-            )
-            token = None
     try:
+        token = await activate_run_llm_selection(llm_selection, on_event=on_event)
         if layer == "L2":
             return await _run_audit_l2(
                 key,  # type: ignore[arg-type]

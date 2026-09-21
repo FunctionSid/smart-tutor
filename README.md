@@ -4,6 +4,8 @@ Smart Tutor is an agent-native learning workspace for tutoring, document study,
 guided practice, quizzes, revision, and RAG-backed reading. It exposes the same
 runtime through a local web app, CLI, WebSocket API, and Python SDK.
 
+Created by **Siddharth Kalantri**.
+
 ## What It Does
 
 - Tutor from uploaded documents, knowledge bases, Reader materials, and prior sessions.

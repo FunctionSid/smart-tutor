@@ -11,6 +11,7 @@ These keep the per-mode files focused on algorithm, not plumbing:
 from __future__ import annotations
 
 import asyncio
+from contextvars import Token
 from datetime import datetime, timezone
 import logging
 import os
@@ -86,6 +87,40 @@ async def emit(on_event: OnEvent | None, event: dict[str, Any]) -> None:
         logger.debug("consolidator: on_event consumer raised", exc_info=True)
 
 
+async def activate_run_llm_selection(
+    llm_selection: dict[str, Any] | None,
+    *,
+    on_event: OnEvent | None = None,
+) -> Token[Any] | None:
+    """Install an explicit model selection and emit the resolved model.
+
+    ``None`` intentionally means "use the current/default model". Invalid
+    explicit selections fail the run so the workbench cannot silently use a
+    different model than the one the user picked.
+    """
+    if not llm_selection:
+        return None
+
+    from smarttutor.services.model_selection.runtime import activate_llm_selection
+
+    try:
+        config, token = activate_llm_selection(llm_selection)
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(f"Invalid LLM selection: {exc}") from exc
+
+    await emit(
+        on_event,
+        {
+            "stage": "model_selected",
+            "profile_id": str(llm_selection.get("profile_id") or ""),
+            "model_id": str(llm_selection.get("model_id") or ""),
+            "model": config.model or "",
+            "provider": config.provider_name or config.binding or "",
+        },
+    )
+    return token
+
+
 async def call_llm(
     *,
     system_prompt: str,
@@ -97,7 +132,7 @@ async def call_llm(
     chunk_index: int | None = None,
     label: str | None = None,
 ) -> str:
-    """Single LLM call. Returns the raw text body; "" on failure.
+    """Single LLM call. Returns the raw text body; raises on total failure.
 
     The model/provider is resolved from the *active* LLM config — the
     mode is expected to have installed a scoped config via
@@ -210,7 +245,7 @@ async def call_llm(
                         "model": model_label,
                     }
                 )
-            return ""
+            raise RuntimeError(f"LLM call failed: {fallback_exc}") from fallback_exc
 
 
 def load_doc(path: Path, *, default_title: str) -> Document:
@@ -325,6 +360,7 @@ def today_iso() -> str:
 __all__ = [
     "OnEvent",
     "call_llm",
+    "activate_run_llm_selection",
     "emit",
     "load_doc",
     "load_focus_meta",

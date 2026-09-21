@@ -15,6 +15,7 @@ export interface HandsFreeSettings {
 
 const STORAGE_KEY = "smarttutor:hands-free-settings";
 export const HANDS_FREE_RUNTIME_EVENT = "smarttutor:hands-free-runtime";
+export const HANDS_FREE_TOGGLE_EVENT = "smarttutor:hands-free-toggle";
 
 export const DEFAULT_HANDS_FREE_SETTINGS: HandsFreeSettings = {
   enabled: false,
